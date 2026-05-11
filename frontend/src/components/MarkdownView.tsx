@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
  * Renders markdown source as styled HTML.
  *
  * In its own lazy-loaded module so the ~80KB markdown bundle is only
- * pulled in when a user actually opens a skill detail page \u2014 it shouldn't
+ * pulled in when a user actually opens a skill detail page — it shouldn't
  * cost the dashboard.
  *
  * GFM plugin enabled for tables / strikethrough / task lists, which

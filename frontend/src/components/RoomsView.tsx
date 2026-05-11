@@ -4,16 +4,16 @@ import { api, type AgentRoom } from '../api';
 /**
  * Owner-only audit view: every Matrix room this bot is currently in.
  *
- * Lists DMs first (typically the most interesting \u2014 "who's talking to my
+ * Lists DMs first (typically the most interesting — "who's talking to my
  * bot"), then other rooms. Pulled live from the bot's own Matrix account
  * via the backend (which logs in as the bot with its stored access token).
  *
  * Empty state covers two cases:
- *   * Bot has no Matrix account provisioned yet (rare \u2014 only for legacy
+ *   * Bot has no Matrix account provisioned yet (rare — only for legacy
  *     agents created before Matrix integration).
  *   * Bot has a Matrix account but is in zero rooms.
  *
- * No actions yet \u2014 just visibility. Future: kick, leave, mute.
+ * No actions yet — just visibility. Future: kick, leave, mute.
  */
 export function RoomsView({
   agentId,
@@ -43,8 +43,8 @@ export function RoomsView({
   return (
     <div className="settings-view">
       <div className="page-header">
-        <button className="btn btn-ghost" onClick={onBack}>\u2190 Back</button>
-        <h2 style={{ margin: 0 }}>Rooms \u2014 {agentName}</h2>
+        <button className="btn btn-ghost" onClick={onBack}>← Back</button>
+        <h2 style={{ margin: 0 }}>Rooms — {agentName}</h2>
       </div>
 
       <p className="muted small">
@@ -55,15 +55,15 @@ export function RoomsView({
       {err && <div className="error">{err}</div>}
 
       {rooms === null && !err && (
-        <div className="muted small">Loading\u2026</div>
+        <div className="muted small">Loading…</div>
       )}
 
       {rooms !== null && rooms.length === 0 && (
         <div className="empty-state" style={{ marginTop: 16 }}>
           <p>No rooms yet.</p>
           <p className="muted small">
-            When someone starts a chat with this bot \u2014 from this app or any
-            Matrix client \u2014 the room will appear here.
+            When someone starts a chat with this bot — from this app or any
+            Matrix client — the room will appear here.
           </p>
         </div>
       )}
