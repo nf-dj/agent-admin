@@ -52,6 +52,33 @@ export interface AgentSkillDetail extends AgentSkill {
 }
 
 /**
+ * One message in a bot's room timeline. Plain text only — ``msgtype``
+ * may indicate non-text events (m.image, m.file), in which case ``body``
+ * falls back to a bracketed placeholder. ``is_bot`` lets the UI right-
+ * align bot messages and style them as 'me' vs 'them'.
+ */
+export interface AgentRoomMessage {
+  event_id: string;
+  sender: string;
+  sender_name: string;
+  body: string;
+  msgtype: string;
+  ts: number;
+  is_bot: boolean;
+}
+
+export interface AgentRoomMessages {
+  messages: AgentRoomMessage[];
+  prev_token: string | null;
+  has_more: boolean;
+}
+
+export interface AgentRoomSendResult {
+  event_id: string;
+  sent_at: number;
+}
+
+/**
  * One Matrix room the bot is currently joined to. ``is_dm`` is true when
  * the room has exactly two members — a Matrix convention for DMs.
  */
@@ -214,6 +241,23 @@ export const api = {
   // --- Per-agent API key overrides (owner-only) ---
   listAgentRooms: (agentId: number) =>
     req<AgentRoom[]>(`/api/agents/${agentId}/rooms`),
+
+  getRoomMessages: (agentId: number, roomId: string,
+                    opts: { limit?: number; from?: string | null } = {}) => {
+    const qs = new URLSearchParams();
+    if (opts.limit) qs.set('limit', String(opts.limit));
+    if (opts.from) qs.set('from', opts.from);
+    const q = qs.toString();
+    return req<AgentRoomMessages>(
+      `/api/agents/${agentId}/rooms/${encodeURIComponent(roomId)}/messages${q ? `?${q}` : ''}`
+    );
+  },
+
+  sendRoomMessage: (agentId: number, roomId: string, text: string) =>
+    req<AgentRoomSendResult>(
+      `/api/agents/${agentId}/rooms/${encodeURIComponent(roomId)}/send`,
+      { method: 'POST', body: JSON.stringify({ text }) }
+    ),
 
   listAgentSkills: (agentId: number) =>
     req<AgentSkill[]>(`/api/agents/${agentId}/skills`),

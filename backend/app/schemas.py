@@ -97,6 +97,64 @@ class AgentSkillDetailOut(AgentSkillOut):
     content: str
 
 
+class AgentRoomMessageOut(BaseModel):
+    """One Matrix message event for the owner-view timeline.
+
+    Only ``m.room.message`` events are surfaced (no joins/state/reactions).
+    ``is_bot`` lets the UI right-align the bot's own messages and style
+    them differently — a familiar 'me' vs 'them' chat layout.
+    """
+    event_id: str
+    sender: str            # full matrix id, e.g. @alice:matrix.netforce.com
+    sender_name: str       # display name or short id fallback
+    body: str              # plain-text content (no markdown / HTML render)
+    msgtype: str           # m.text | m.notice | m.image | m.file | ...
+    ts: int                # origin_server_ts (epoch ms)
+    is_bot: bool           # True when sender == this agent's matrix_user_id
+
+
+class AgentRoomMessagesOut(BaseModel):
+    """Paginated response from /rooms/{id}/messages.
+
+    ``messages`` is ordered oldest-first (natural reading). ``prev_token``
+    is the cursor to fetch *older* messages on a subsequent request (pass
+    as the ``from`` query param). ``has_more`` is a UI hint — false means
+    'no point showing a Load older button'.
+    """
+    messages: list[AgentRoomMessageOut]
+    prev_token: str | None = None
+    has_more: bool = False
+
+
+class AgentRoomSendBody(BaseModel):
+    """Body for POST /rooms/{id}/send. Plain text only for v1.
+
+    ``text`` is stripped before validation so leading/trailing whitespace
+    doesn't pad the message. After strip we re-check the length so a
+    whitespace-only payload is rejected as too short rather than falling
+    through into Matrix.
+    """
+    text: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("text", mode="before")
+    @classmethod
+    def _strip(cls, v):
+        # Run early so length-validation sees the stripped value. Returning
+        # the stripped string lets ``min_length=1`` reject whitespace-only
+        # input with the standard 422 response (no custom error handler
+        # needed, no ValueError-in-JSON serialization quirks).
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+
+class AgentRoomSendResult(BaseModel):
+    """Response from a successful send. Includes the new event id so the
+    UI can optimistically attach the new message to the timeline."""
+    event_id: str
+    sent_at: int           # client-side timestamp, epoch ms
+
+
 class AgentRoomOut(BaseModel):
     """One Matrix room the bot is currently joined to.
 

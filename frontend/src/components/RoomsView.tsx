@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type AgentRoom } from '../api';
+import { RoomMessagesView } from './RoomMessagesView';
 
 /**
  * Owner-only audit view: every Matrix room this bot is currently in.
@@ -26,6 +27,8 @@ export function RoomsView({
 }) {
   const [rooms, setRooms] = useState<AgentRoom[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  /** Currently-selected room (drill-down to message timeline). */
+  const [openRoom, setOpenRoom] = useState<{ id: string; label: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +42,19 @@ export function RoomsView({
 
   /** Strip the homeserver part of a matrix id for compact display. */
   const shortId = (mxid: string) => mxid.split(':')[0];
+
+  // Drill-down view: message timeline + compose box for the selected room.
+  if (openRoom) {
+    return (
+      <RoomMessagesView
+        agentId={agentId}
+        agentName={agentName}
+        roomId={openRoom.id}
+        roomLabel={openRoom.label}
+        onBack={() => setOpenRoom(null)}
+      />
+    );
+  }
 
   return (
     <div className="settings-view">
@@ -71,7 +87,22 @@ export function RoomsView({
       {rooms && rooms.length > 0 && (
         <ul className="member-list" style={{ marginTop: 16 }}>
           {rooms.map((r) => (
-            <li key={r.room_id} className="member-row">
+            <li
+              key={r.room_id}
+              className="member-row skill-row"
+              onClick={() => setOpenRoom({
+                id: r.room_id,
+                label: r.is_dm && r.other_user_id ? shortId(r.other_user_id) : r.name,
+              })}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setOpenRoom({
+                  id: r.room_id,
+                  label: r.is_dm && r.other_user_id ? shortId(r.other_user_id) : r.name,
+                });
+              }}
+            >
               <div className="member-main">
                 <div className="member-name">
                   {r.is_dm && r.other_user_id ? shortId(r.other_user_id) : r.name}
