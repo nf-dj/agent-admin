@@ -127,6 +127,11 @@ function AgentGrid({
                     title="See all Matrix rooms this bot is in"
                   >
                     🚪 Rooms
+                    {a.room_count !== null && a.room_count !== undefined && (
+                      <span className="room-count-badge" aria-label={`${a.room_count} rooms`}>
+                        {a.room_count}
+                      </span>
+                    )}
                   </button>
                 )}
               </div>

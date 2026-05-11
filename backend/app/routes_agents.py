@@ -87,6 +87,9 @@ def list_agents(current: User = Depends(get_current_user), db: Session = Depends
     """All agents the current user can access: owned + shared with me.
 
     Each row carries the current user's role on that agent in ``my_role``.
+    Owned agents additionally get a live ``room_count`` from Matrix — a
+    cheap signal for "how many people are talking to my bot". Members'
+    rooms are not exposed (they don't own the bot's audit surface).
     """
     rows = db.execute(
         select(Agent, AgentMember.role)
@@ -94,7 +97,17 @@ def list_agents(current: User = Depends(get_current_user), db: Session = Depends
         .where(AgentMember.user_id == current.id)
         .order_by(Agent.created_at.desc())
     ).all()
-    return [AgentOut.from_agent(a, my_role=role) for a, role in rows]
+
+    # Fetch room counts only for owned agents — cheaper, and prevents
+    # leaking aggregate "my bot has N rooms" data to non-owner members.
+    from .routes_rooms import counts_for_agents
+    owned_agents = [a for a, role in rows if role == "owner"]
+    counts = counts_for_agents(owned_agents)
+
+    return [
+        AgentOut.from_agent(a, my_role=role, room_count=counts.get(a.id))
+        for a, role in rows
+    ]
 
 
 @router.post("/agents", response_model=AgentDetailOut, status_code=201)

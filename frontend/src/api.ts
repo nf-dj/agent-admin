@@ -60,6 +60,10 @@ export interface Agent {
   updated_at: string;
   /** Current user's role on this agent. */
   my_role: AgentRole;
+  /** Number of Matrix rooms the bot is currently joined to. Only populated
+   *  for owned agents (members don't see this). ``null`` means "don't know"
+   *  — no Matrix account, lookup failed, or member view. */
+  room_count: number | null;
 }
 
 export interface AgentDetail extends Agent {

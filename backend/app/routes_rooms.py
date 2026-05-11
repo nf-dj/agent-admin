@@ -152,3 +152,60 @@ def _quote(s: str) -> str:
     """URL-quote a room/user id for use in a Matrix REST path."""
     from urllib.parse import quote
     return quote(s, safe="")
+
+
+# ---------------------------------------------------------------------------
+# Cheap room-count lookup used by the dashboard
+# ---------------------------------------------------------------------------
+
+def _count_rooms_for(token: str) -> int | None:
+    """Return how many rooms a Matrix account is joined to, or None on error.
+
+    Used by the dashboard to render a small badge next to each owned bot.
+    Errors (revoked token, network blip, etc.) collapse to ``None`` so the
+    UI simply hides the badge rather than failing the whole listing.
+    """
+    try:
+        resp = matrix_admin._request(
+            "GET", "/_matrix/client/v3/joined_rooms", token=token, timeout=8,
+        )
+    except MatrixError as e:
+        log.debug("joined_rooms count failed: %s", e)
+        return None
+    rooms = resp.get("joined_rooms")
+    return len(rooms) if isinstance(rooms, list) else None
+
+
+def counts_for_agents(agents: list) -> dict[int, int | None]:
+    """Return ``{agent_id: count_or_None}`` for every agent that has a
+    Matrix account, fetched in parallel.
+
+    Agents with no Matrix creds are skipped (caller treats them as None).
+    Bounded thread pool keeps load on Synapse modest — 8 in flight max,
+    which is plenty for a dashboard but won't swamp the homeserver if
+    someone has dozens of bots.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    targets = [a for a in agents if a.matrix_user_id and a.matrix_access_token]
+    if not targets:
+        return {}
+    if not matrix_admin.enabled:
+        return {a.id: None for a in targets}
+
+    result: dict[int, int | None] = {}
+    # max_workers capped so we don't spawn a thread per bot in pathological
+    # cases. 8 is well below Synapse's per-IP limits even on small deploys.
+    with ThreadPoolExecutor(max_workers=min(8, len(targets))) as ex:
+        futures = {ex.submit(_count_rooms_for, a.matrix_access_token): a.id
+                   for a in targets}
+        for fut in futures:
+            aid = futures[fut]
+            try:
+                result[aid] = fut.result()
+            except Exception:
+                # Belt-and-braces: _count_rooms_for already swallows MatrixError;
+                # this catches anything truly unexpected (e.g. asyncio cancellation).
+                log.exception("room count for agent %s crashed", aid)
+                result[aid] = None
+    return result

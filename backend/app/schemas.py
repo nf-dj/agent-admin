@@ -177,9 +177,13 @@ class AgentOut(BaseModel):
     updated_at: datetime
     # Role of the current user on this agent. "owner" or "member".
     my_role: str = "owner"
+    # Number of Matrix rooms this bot is currently joined to. None when
+    # the bot has no Matrix account, Matrix is unavailable, or the lookup
+    # failed — the dashboard treats null as "don't render the badge".
+    room_count: int | None = None
 
     @classmethod
-    def from_agent(cls, a, my_role: str = "owner"):
+    def from_agent(cls, a, my_role: str = "owner", room_count: int | None = None):
         return cls(
             id=a.id,
             harness=a.harness,
@@ -193,6 +197,7 @@ class AgentOut(BaseModel):
             created_at=a.created_at,
             updated_at=a.updated_at,
             my_role=my_role,
+            room_count=room_count,
         )
 
 
