@@ -1,0 +1,24 @@
+[Unit]
+Description=Agent Admin (FastAPI backend serving React UI)
+After=network.target
+
+[Service]
+Type=simple
+User=bots
+Group=bots
+WorkingDirectory=/home/bots/projects/agent-admin/backend
+# So this service can call `systemctl --user restart openclaw-gateway`
+Environment=XDG_RUNTIME_DIR=/run/user/1002
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1002/bus
+EnvironmentFile=/home/bots/projects/agent-admin/backend/.env
+ExecStart=/home/bots/projects/agent-admin/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 5191
+Restart=on-failure
+RestartSec=3
+# Hardening
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

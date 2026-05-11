@@ -1,0 +1,124 @@
+import { useEffect, useMemo, useState } from 'react';
+import { api, type Agent } from '../api';
+
+export function Dashboard({
+  onCreate,
+  onOpen,
+  onChat,
+}: {
+  onCreate: () => void;
+  onOpen: (id: number) => void;
+  onChat: (id: number) => void;
+}) {
+  const [agents, setAgents] = useState<Agent[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.listAgents().then(setAgents).catch((e) => setErr(e.message));
+  }, []);
+
+  const { owned, shared } = useMemo(() => {
+    const owned: Agent[] = [];
+    const shared: Agent[] = [];
+    for (const a of agents || []) {
+      (a.my_role === 'owner' ? owned : shared).push(a);
+    }
+    return { owned, shared };
+  }, [agents]);
+
+  return (
+    <div>
+      <div className="list-head">
+        <div>
+          <h2>Your agents <span className="muted">({agents?.length ?? '…'})</span></h2>
+          <p className="muted small">Each agent runs in its own OpenClaw workspace.</p>
+        </div>
+        <button className="btn btn-primary" onClick={onCreate}>+ New agent</button>
+      </div>
+
+      {err && <div className="banner-error">{err}</div>}
+      {agents === null && !err && <div className="loading">Loading…</div>}
+      {agents && agents.length === 0 && (
+        <div className="empty-state">
+          <h3>No agents yet</h3>
+          <p>Create your first agent to get started.</p>
+          <button className="btn btn-primary" onClick={onCreate} style={{ marginTop: 16 }}>+ New agent</button>
+        </div>
+      )}
+
+      {agents && owned.length > 0 && (
+        <section className="agent-section">
+          <h3 className="section-heading">
+            Owned by me <span className="muted small">({owned.length})</span>
+          </h3>
+          <AgentGrid agents={owned} onOpen={onOpen} onChat={onChat} />
+        </section>
+      )}
+
+      {agents && shared.length > 0 && (
+        <section className="agent-section">
+          <h3 className="section-heading">
+            Shared with me <span className="muted small">({shared.length})</span>
+          </h3>
+          <AgentGrid agents={shared} onOpen={onOpen} onChat={onChat} />
+        </section>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Grid of agent cards. The card behaviour differs by role:
+ *  - owner  → clicking the card opens the detail view (with settings, members, etc).
+ *  - member → clicking the card opens the chat (members can't edit settings).
+ */
+function AgentGrid({
+  agents,
+  onOpen,
+  onChat,
+}: {
+  agents: Agent[];
+  onOpen: (id: number) => void;
+  onChat: (id: number) => void;
+}) {
+  return (
+    <div className="agent-grid">
+      {agents.map((a) => {
+        const isOwner = a.my_role === 'owner';
+        const cardOnClick = () => (isOwner ? onOpen(a.id) : onChat(a.id));
+        return (
+          <div key={a.id} className="agent-card" onClick={cardOnClick}>
+            <h3>
+              <span className="agent-emoji">{a.emoji || '🤖'}</span>
+              <span>{a.display_name}</span>
+            </h3>
+            <div className="agent-id">{a.harness_agent_id}</div>
+            <div className="agent-meta">
+              {isOwner && (
+                <>
+                  <div><strong>Model:</strong> {a.model || '—'}</div>
+                  <div><strong>Harness:</strong> {a.harness}</div>
+                </>
+              )}
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                {!isOwner && <span className="badge badge-member">Member</span>}
+                {a.has_telegram && isOwner && <span className="badge badge-telegram">Telegram</span>}
+                {a.matrix_user_id && <span className="badge badge-matrix">Matrix</span>}
+              </div>
+            </div>
+            {a.matrix_user_id && (
+              <div className="agent-actions" onClick={(e) => e.stopPropagation()}>
+                <button
+                  className="btn btn-secondary btn-sm grow-0"
+                  onClick={() => onChat(a.id)}
+                >
+                  💬 Chat
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

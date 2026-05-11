@@ -1,0 +1,4 @@
+bots.netforce.com {
+	reverse_proxy localhost:5191
+	encode gzip
+}

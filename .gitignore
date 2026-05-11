@@ -1,0 +1,43 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / Vite ---
+node_modules/
+frontend/dist/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.vite/
+
+# --- Local data & secrets (per-deployment, never commit) ---
+# SQLite DB with user accounts + API keys (plaintext per design)
+backend/*.sqlite
+backend/*.sqlite-journal
+backend/*.sqlite-shm
+backend/*.sqlite-wal
+
+# Environment files (admin secret_key, etc.)
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
