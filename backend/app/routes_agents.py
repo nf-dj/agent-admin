@@ -98,14 +98,18 @@ def list_agents(current: User = Depends(get_current_user), db: Session = Depends
         .order_by(Agent.created_at.desc())
     ).all()
 
-    # Fetch room counts only for owned agents — cheaper, and prevents
-    # leaking aggregate "my bot has N rooms" data to non-owner members.
+    # Fetch room counts + skill counts only for owned agents — cheaper, and
+    # prevents leaking aggregate audit data to non-owner members.
     from .routes_rooms import counts_for_agents
+    from .routes_skills import count_skills_for
     owned_agents = [a for a, role in rows if role == "owner"]
-    counts = counts_for_agents(owned_agents)
+    room_counts = counts_for_agents(owned_agents)
+    skill_counts = {a.id: count_skills_for(a) for a in owned_agents}
 
     return [
-        AgentOut.from_agent(a, my_role=role, room_count=counts.get(a.id))
+        AgentOut.from_agent(a, my_role=role,
+                            room_count=room_counts.get(a.id),
+                            skill_count=skill_counts.get(a.id))
         for a, role in rows
     ]
 

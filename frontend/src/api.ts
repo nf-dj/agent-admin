@@ -33,6 +33,25 @@ export interface AgentApiKey {
 }
 
 /**
+ * One skill installed in an agent's workspace, parsed from the YAML
+ * frontmatter of ``<workspace>/skills/<name>/SKILL.md``. All metadata
+ * fields are optional because real-world SKILL.md files vary.
+ */
+export interface AgentSkill {
+  name: string;
+  description: string | null;
+  version: string | null;
+  author: string | null;
+  updated: string | null;
+  path: string;
+}
+
+export interface AgentSkillDetail extends AgentSkill {
+  /** Full SKILL.md content as raw markdown source. */
+  content: string;
+}
+
+/**
  * One Matrix room the bot is currently joined to. ``is_dm`` is true when
  * the room has exactly two members — a Matrix convention for DMs.
  */
@@ -64,6 +83,9 @@ export interface Agent {
    *  for owned agents (members don't see this). ``null`` means "don't know"
    *  — no Matrix account, lookup failed, or member view. */
   room_count: number | null;
+  /** Number of skills found in the agent's workspace. Same conventions as
+   *  ``room_count`` — owner-only, null means hide the badge. */
+  skill_count: number | null;
 }
 
 export interface AgentDetail extends Agent {
@@ -192,6 +214,12 @@ export const api = {
   // --- Per-agent API key overrides (owner-only) ---
   listAgentRooms: (agentId: number) =>
     req<AgentRoom[]>(`/api/agents/${agentId}/rooms`),
+
+  listAgentSkills: (agentId: number) =>
+    req<AgentSkill[]>(`/api/agents/${agentId}/skills`),
+
+  getAgentSkill: (agentId: number, skillName: string) =>
+    req<AgentSkillDetail>(`/api/agents/${agentId}/skills/${encodeURIComponent(skillName)}`),
 
   listAgentApiKeys: (agentId: number) =>
     req<AgentApiKey[]>(`/api/agents/${agentId}/api-keys`),

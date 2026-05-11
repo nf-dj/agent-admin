@@ -6,6 +6,7 @@ export function Dashboard({
   onOpen,
   onChat,
   onRooms,
+  onSkills,
 }: {
   onCreate: () => void;
   onOpen: (id: number) => void;
@@ -13,6 +14,9 @@ export function Dashboard({
   /** Open the per-bot Matrix rooms list. Owner-only feature — the button
    *  is hidden for members in the grid. */
   onRooms: (id: number, name: string) => void;
+  /** Open the per-bot skills list. Owner-only — skills describe internal
+   *  capabilities so members don't get the audit view. */
+  onSkills: (id: number, name: string) => void;
 }) {
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -55,7 +59,7 @@ export function Dashboard({
           <h3 className="section-heading">
             Owned by me <span className="muted small">({owned.length})</span>
           </h3>
-          <AgentGrid agents={owned} onOpen={onOpen} onChat={onChat} onRooms={onRooms} />
+          <AgentGrid agents={owned} onOpen={onOpen} onChat={onChat} onRooms={onRooms} onSkills={onSkills} />
         </section>
       )}
 
@@ -64,7 +68,7 @@ export function Dashboard({
           <h3 className="section-heading">
             Shared with me <span className="muted small">({shared.length})</span>
           </h3>
-          <AgentGrid agents={shared} onOpen={onOpen} onChat={onChat} onRooms={onRooms} />
+          <AgentGrid agents={shared} onOpen={onOpen} onChat={onChat} onRooms={onRooms} onSkills={onSkills} />
         </section>
       )}
     </div>
@@ -81,11 +85,13 @@ function AgentGrid({
   onOpen,
   onChat,
   onRooms,
+  onSkills,
 }: {
   agents: Agent[];
   onOpen: (id: number) => void;
   onChat: (id: number) => void;
   onRooms: (id: number, name: string) => void;
+  onSkills: (id: number, name: string) => void;
 }) {
   return (
     <div className="agent-grid">
@@ -130,6 +136,20 @@ function AgentGrid({
                     {a.room_count !== null && a.room_count !== undefined && (
                       <span className="room-count-badge" aria-label={`${a.room_count} rooms`}>
                         {a.room_count}
+                      </span>
+                    )}
+                  </button>
+                )}
+                {isOwner && (
+                  <button
+                    className="btn btn-ghost btn-sm grow-0"
+                    onClick={() => onSkills(a.id, a.display_name)}
+                    title="See the skills installed in this bot's workspace"
+                  >
+                    🧰 Skills
+                    {a.skill_count !== null && a.skill_count !== undefined && (
+                      <span className="room-count-badge" aria-label={`${a.skill_count} skills`}>
+                        {a.skill_count}
                       </span>
                     )}
                   </button>

@@ -224,6 +224,31 @@ code { font-family: "SF Mono", Monaco, Menlo, "Courier New", monospace; font-siz
   vertical-align: middle;
 }
 
+/* Skill rows are clickable; give them a subtle hover affordance. */
+.skill-row {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.skill-row:hover {
+  background: var(--panel-2);
+}
+
+/* Raw SKILL.md content viewer — monospace, wrap long lines, scroll on overflow. */
+.skill-content {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-top: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-x: auto;
+  max-height: 60vh;
+}
+
 /* ===== Per-agent API key status labels ===== */
 .key-status {
   display: inline-block;

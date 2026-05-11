@@ -6,6 +6,7 @@ import { AgentDetailView } from './components/AgentDetailView';
 import { CreateAgentView } from './components/CreateAgentView';
 import { SettingsView } from './components/SettingsView';
 import { RoomsView } from './components/RoomsView';
+import { SkillsView } from './components/SkillsView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { getBrand } from './brand';
 import './App.css';
@@ -20,6 +21,7 @@ type View =
   | { kind: 'detail'; agentId: number }
   | { kind: 'chat'; agentId: number }
   | { kind: 'rooms'; agentId: number; agentName: string }
+  | { kind: 'skills'; agentId: number; agentName: string }
   | { kind: 'settings' };
 
 export default function App() {
@@ -87,6 +89,7 @@ export default function App() {
               onOpen={(id) => setView({ kind: 'detail', agentId: id })}
               onChat={(id) => setView({ kind: 'chat', agentId: id })}
               onRooms={(id, name) => setView({ kind: 'rooms', agentId: id, agentName: name })}
+              onSkills={(id, name) => setView({ kind: 'skills', agentId: id, agentName: name })}
             />
           )}
           {view.kind === 'create' && (
@@ -119,6 +122,13 @@ export default function App() {
           )}
           {view.kind === 'rooms' && (
             <RoomsView
+              agentId={view.agentId}
+              agentName={view.agentName}
+              onBack={() => setView({ kind: 'list' })}
+            />
+          )}
+          {view.kind === 'skills' && (
+            <SkillsView
               agentId={view.agentId}
               agentName={view.agentName}
               onBack={() => setView({ kind: 'list' })}

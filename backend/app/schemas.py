@@ -75,6 +75,28 @@ class AgentApiKeyOut(BaseModel):
     user_saved_preview: str | None = None
 
 
+class AgentSkillOut(BaseModel):
+    """Summary of one skill installed in an agent's workspace.
+
+    Parsed from the YAML frontmatter of ``SKILL.md``. Fields are nullable
+    because skill manifests in the wild aren't perfectly uniform — we
+    surface what we find and let the UI cope with gaps.
+    """
+    name: str
+    description: str | None = None
+    version: str | None = None
+    author: str | None = None
+    updated: str | None = None
+    # Relative path from workspace root to the skill's folder. Useful for
+    # the detail view and for power-users who want to ssh in and edit.
+    path: str
+
+
+class AgentSkillDetailOut(AgentSkillOut):
+    """Skill summary + full SKILL.md content (markdown source)."""
+    content: str
+
+
 class AgentRoomOut(BaseModel):
     """One Matrix room the bot is currently joined to.
 
@@ -181,9 +203,13 @@ class AgentOut(BaseModel):
     # the bot has no Matrix account, Matrix is unavailable, or the lookup
     # failed — the dashboard treats null as "don't render the badge".
     room_count: int | None = None
+    # Number of skills found in the agent's workspace. Same null-means-hidden
+    # convention as ``room_count``. Owner-only — members see None.
+    skill_count: int | None = None
 
     @classmethod
-    def from_agent(cls, a, my_role: str = "owner", room_count: int | None = None):
+    def from_agent(cls, a, my_role: str = "owner", room_count: int | None = None,
+                   skill_count: int | None = None):
         return cls(
             id=a.id,
             harness=a.harness,
@@ -198,6 +224,7 @@ class AgentOut(BaseModel):
             updated_at=a.updated_at,
             my_role=my_role,
             room_count=room_count,
+            skill_count=skill_count,
         )
 
 
