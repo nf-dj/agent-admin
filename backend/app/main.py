@@ -15,6 +15,7 @@ from .routes_auth import router as auth_router
 from .routes_agents import router as agents_router
 from .routes_members import router as members_router
 from .routes_agent_keys import router as agent_keys_router
+from .routes_rooms import router as rooms_router
 from .routes_me import router as me_router
 
 
@@ -42,6 +43,7 @@ app.include_router(auth_router)
 app.include_router(agents_router)
 app.include_router(members_router)
 app.include_router(agent_keys_router)
+app.include_router(rooms_router)
 app.include_router(me_router)
 
 

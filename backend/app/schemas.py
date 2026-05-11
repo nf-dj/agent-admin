@@ -75,6 +75,21 @@ class AgentApiKeyOut(BaseModel):
     user_saved_preview: str | None = None
 
 
+class AgentRoomOut(BaseModel):
+    """One Matrix room the bot is currently joined to.
+
+    ``is_dm`` is True when the room has exactly two joined members — a
+    convention Matrix clients use to render "direct message" UIs. For DMs
+    we surface the other party's user id so the owner can see who they're
+    talking to without opening the room.
+    """
+    room_id: str
+    name: str
+    member_count: int
+    is_dm: bool
+    other_user_id: str | None = None
+
+
 class AgentApiKeySet(BaseModel):
     """Body for PUT /api/agents/{id}/api-keys/{provider}."""
     api_key: str = Field(min_length=1, max_length=512)

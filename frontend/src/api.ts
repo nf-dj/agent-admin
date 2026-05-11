@@ -32,6 +32,18 @@ export interface AgentApiKey {
   user_saved_preview: string | null;
 }
 
+/**
+ * One Matrix room the bot is currently joined to. ``is_dm`` is true when
+ * the room has exactly two members — a Matrix convention for DMs.
+ */
+export interface AgentRoom {
+  room_id: string;
+  name: string;
+  member_count: number;
+  is_dm: boolean;
+  other_user_id: string | null;
+}
+
 export type AgentRole = 'owner' | 'member';
 
 export interface Agent {
@@ -174,6 +186,9 @@ export const api = {
     req<UserApiKey>(`/api/me/api-keys/${encodeURIComponent(provider)}`, { method: 'DELETE' }),
 
   // --- Per-agent API key overrides (owner-only) ---
+  listAgentRooms: (agentId: number) =>
+    req<AgentRoom[]>(`/api/agents/${agentId}/rooms`),
+
   listAgentApiKeys: (agentId: number) =>
     req<AgentApiKey[]>(`/api/agents/${agentId}/api-keys`),
   setAgentApiKey: (agentId: number, provider: string, api_key: string) =>

@@ -5,10 +5,14 @@ export function Dashboard({
   onCreate,
   onOpen,
   onChat,
+  onRooms,
 }: {
   onCreate: () => void;
   onOpen: (id: number) => void;
   onChat: (id: number) => void;
+  /** Open the per-bot Matrix rooms list. Owner-only feature — the button
+   *  is hidden for members in the grid. */
+  onRooms: (id: number, name: string) => void;
 }) {
   const [agents, setAgents] = useState<Agent[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -51,7 +55,7 @@ export function Dashboard({
           <h3 className="section-heading">
             Owned by me <span className="muted small">({owned.length})</span>
           </h3>
-          <AgentGrid agents={owned} onOpen={onOpen} onChat={onChat} />
+          <AgentGrid agents={owned} onOpen={onOpen} onChat={onChat} onRooms={onRooms} />
         </section>
       )}
 
@@ -60,7 +64,7 @@ export function Dashboard({
           <h3 className="section-heading">
             Shared with me <span className="muted small">({shared.length})</span>
           </h3>
-          <AgentGrid agents={shared} onOpen={onOpen} onChat={onChat} />
+          <AgentGrid agents={shared} onOpen={onOpen} onChat={onChat} onRooms={onRooms} />
         </section>
       )}
     </div>
@@ -76,10 +80,12 @@ function AgentGrid({
   agents,
   onOpen,
   onChat,
+  onRooms,
 }: {
   agents: Agent[];
   onOpen: (id: number) => void;
   onChat: (id: number) => void;
+  onRooms: (id: number, name: string) => void;
 }) {
   return (
     <div className="agent-grid">
@@ -114,6 +120,15 @@ function AgentGrid({
                 >
                   💬 Chat
                 </button>
+                {isOwner && (
+                  <button
+                    className="btn btn-ghost btn-sm grow-0"
+                    onClick={() => onRooms(a.id, a.display_name)}
+                    title="See all Matrix rooms this bot is in"
+                  >
+                    🚪 Rooms
+                  </button>
+                )}
               </div>
             )}
           </div>
