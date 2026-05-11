@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { api, type AgentSkill, type AgentSkillDetail } from '../api';
+
+// react-markdown + remark-gfm is ~80KB; only fetched when a user opens a skill.
+const MarkdownView = lazy(() => import('./MarkdownView'));
 
 /**
  * Owner-only: lists every skill installed in an agent's workspace.
@@ -8,9 +11,9 @@ import { api, type AgentSkill, type AgentSkillDetail } from '../api';
  * OpenClaw layout). Each row shows what we parsed from the manifest's
  * YAML frontmatter; clicking opens a side panel with the full markdown.
  *
- * Markdown is rendered as plain text inside a ``<pre>`` for v1 \u2014 readable
- * and dependency-free. If we ever want pretty rendering we can swap in
- * react-markdown without changing the data shape.
+ * Markdown is rendered prettily via react-markdown + GFM (tables, lists,
+ * strikethrough etc). A "Source" toggle drops back to monospace raw text
+ * for copy/paste or debugging.
  */
 export function SkillsView({
   agentId,
@@ -28,6 +31,8 @@ export function SkillsView({
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<AgentSkillDetail | null>(null);
   const [detailErr, setDetailErr] = useState<string | null>(null);
+  /** 'rendered' = pretty markdown; 'source' = raw monospace. */
+  const [viewMode, setViewMode] = useState<'rendered' | 'source'>('rendered');
 
   useEffect(() => {
     let cancelled = false;
@@ -72,8 +77,33 @@ export function SkillsView({
             <p className="muted small" style={{ marginTop: 8 }}>
               Path: <code>{detail.path}/SKILL.md</code>
             </p>
-            {/* Plain-text markdown render \u2014 not pretty, but legible and zero JS deps. */}
-            <pre className="skill-content">{detail.content}</pre>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
+              <div className="view-toggle" role="tablist" aria-label="View mode" style={{ marginLeft: 'auto' }}>
+                <button
+                  role="tab"
+                  aria-selected={viewMode === 'rendered'}
+                  className={`btn btn-sm ${viewMode === 'rendered' ? 'btn-secondary' : 'btn-ghost'}`}
+                  onClick={() => setViewMode('rendered')}
+                >
+                  Rendered
+                </button>
+                <button
+                  role="tab"
+                  aria-selected={viewMode === 'source'}
+                  className={`btn btn-sm ${viewMode === 'source' ? 'btn-secondary' : 'btn-ghost'}`}
+                  onClick={() => setViewMode('source')}
+                >
+                  Source
+                </button>
+              </div>
+            </div>
+            {viewMode === 'rendered' ? (
+              <Suspense fallback={<div className="muted small" style={{ marginTop: 12 }}>Loading renderer...</div>}>
+                <MarkdownView source={_stripFrontmatter(detail.content)} />
+              </Suspense>
+            ) : (
+              <pre className="skill-content">{detail.content}</pre>
+            )}
           </>
         )}
       </div>
@@ -134,6 +164,23 @@ export function SkillsView({
       )}
     </div>
   );
+}
+
+/**
+ * Strip the YAML frontmatter block from SKILL.md before rendering.
+ *
+ * The frontmatter is already parsed and shown by ``SkillMeta`` — rendering
+ * it again as raw markdown would just dump a confusing ``---`` block at
+ * the top of the pretty view.
+ */
+function _stripFrontmatter(src: string): string {
+  if (!src.startsWith('---')) return src;
+  const body = src.slice(3);
+  const endIdx = body.indexOf('\n---');
+  if (endIdx === -1) return src;
+  let after = body.slice(endIdx + 4);
+  if (after.startsWith('\n')) after = after.slice(1);
+  return after.trimStart();
 }
 
 /**
