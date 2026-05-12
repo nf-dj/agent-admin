@@ -13,7 +13,7 @@
  * v1 keeps things simple: plaintext rooms (the bots run with `encryption=false`),
  * no E2EE, no history pagination beyond the initial sync, no typing indicators.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   createClient,
   type MatrixClient,
@@ -113,6 +113,14 @@ export function ChatView({ agentId, onBack }: { agentId: number; onBack: () => v
   const roomIdRef = useRef<string | null>(null);
   const stoppedRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Sticky-scroll state. When the user is at (or near) the bottom we
+  // auto-follow new messages; if they've scrolled up to read history we
+  // *don't* yank them down, and instead surface a "jump to bottom" pill
+  // that resumes following on click.
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+  /** Updated by the onScroll handler; the auto-scroll effect reads it. */
+  const stickToBottomRef = useRef(true);
 
   // 1) Load agent + creds in parallel.
   useEffect(() => {
@@ -310,12 +318,38 @@ export function ChatView({ agentId, onBack }: { agentId: number; onBack: () => v
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent, creds]);
 
-  // Auto-scroll to bottom on new message OR when typing indicator appears.
+  // Auto-scroll to bottom on new message OR when typing indicator appears,
+  // BUT only if the user is already pinned to the bottom. If they've
+  // scrolled up to read history we leave them in place — the floating
+  // "jump to bottom" button is their way back.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    if (stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages.length, typing.length]);
+
+  /** Treat "within 80px of the bottom" as still pinned — catches the case
+   *  where a new message just bumped the height by a row or two. */
+  const NEAR_BOTTOM_PX = 80;
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const atBottom = distanceFromBottom <= NEAR_BOTTOM_PX;
+    stickToBottomRef.current = atBottom;
+    setShowJumpToBottom(!atBottom);
+  }, []);
+
+  const jumpToBottom = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    stickToBottomRef.current = true;
+    setShowJumpToBottom(false);
+  }, []);
 
   const send = async () => {
     const text = input.trim();
@@ -390,7 +424,7 @@ export function ChatView({ agentId, onBack }: { agentId: number; onBack: () => v
       </div>
 
       <div className="chat-box">
-        <div className="chat-messages" ref={scrollRef}>
+        <div className="chat-messages" ref={scrollRef} onScroll={handleScroll}>
           {messages.length === 0 && status.phase === 'ready' && (
             <div className="chat-empty">Say hi 👋</div>
           )}
@@ -411,6 +445,18 @@ export function ChatView({ agentId, onBack }: { agentId: number; onBack: () => v
             </div>
           )}
         </div>
+
+        {showJumpToBottom && (
+          <button
+            type="button"
+            className="chat-jump-to-bottom"
+            onClick={jumpToBottom}
+            aria-label="Jump to latest messages"
+            title="Jump to latest"
+          >
+            ↓
+          </button>
+        )}
 
         <form
           className="chat-input"

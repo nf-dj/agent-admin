@@ -13,6 +13,49 @@
   --danger: #f87171;
   --info: #60a5fa;
   --link: #8ab4ff;
+
+  /* Scrollbar tokens — reused by both the WebKit pseudo-elements and the
+     Firefox/standard ``scrollbar-color`` property so the appearance stays
+     consistent across engines. */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: #2f3540;
+  --scrollbar-thumb-hover: #434b5c;
+
+  /* Hint native form controls (scrollbar, checkbox, etc.) that we're a
+     dark UI — stops Chrome rendering a bright-white scrollbar gutter. */
+  color-scheme: dark;
+}
+
+/* --- Custom dark scrollbars --------------------------------------------
+   Applied globally so every scroll container (chat, settings, room
+   messages, skill viewer) gets the same slim dark treatment instead of
+   the OS default white scrollbar. Hidden until hover for a calmer look,
+   but always present in the chat area where the user really wants to
+   know how far down they are. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 6px;
+  /* Inset border creates a slim, floating thumb look. */
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
 }
 
 * { box-sizing: border-box; }
@@ -595,6 +638,8 @@ code { font-family: "SF Mono", Monaco, Menlo, "Courier New", monospace; font-siz
   border-radius: 10px;
   overflow: hidden;
   margin-top: 12px;
+  /* Positioning context for the floating jump-to-bottom button. */
+  position: relative;
 }
 .chat-messages {
   flex: 1;
@@ -606,6 +651,46 @@ code { font-family: "SF Mono", Monaco, Menlo, "Courier New", monospace; font-siz
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* Floating "jump to latest" button.
+   Shown by ChatView only when the user has scrolled up from the bottom;
+   click snaps the scroll back to the newest message. Sits over the
+   message list at the bottom-right, just above the composer. */
+.chat-jump-to-bottom {
+  position: absolute;
+  right: 16px;
+  /* Hover above the composer (input row ≈ 56px tall). */
+  bottom: 72px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+  z-index: 5;
+  animation: chat-jump-fade-in 140ms ease-out;
+}
+.chat-jump-to-bottom:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.chat-jump-to-bottom:active {
+  transform: translateY(0);
+}
+@keyframes chat-jump-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 .chat-empty {
   margin: auto;
