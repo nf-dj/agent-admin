@@ -246,6 +246,53 @@ class CustomProvider(Base):
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class WhatsAppRoutingRule(Base):
+    """Per-contact override of which bot answers on a shared WA number.
+
+    The existing ``agents.whatsapp_login_id`` column already records the
+    *default* bot for a WA login (one bot per number). This table layers
+    contact-specific overrides on top: "messages from this WA contact go
+    to bot X instead of the default".
+
+    Matching is done by ``contact_jid`` against the portal's WhatsApp JID
+    (e.g. ``66909966651@s.whatsapp.net``). A row with ``contact_jid='*'``
+    acts as an explicit fallback that, if present, takes precedence over
+    the implicit default in ``agents.whatsapp_login_id``.
+
+    ``priority`` orders rules within the same login: lower wins. The
+    ``'*'`` fallback should usually have the highest (largest) priority
+    so specific rules win.
+
+    Phase 1 of the WA routing feature is read-only — the rules table
+    exists, can be viewed in the UI, but nothing acts on it yet. Phase 3
+    will introduce a worker that walks portal rooms and invites the
+    matching bot.
+    """
+    __tablename__ = "wa_routing_rules"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "wa_login_id", "contact_jid",
+            name="uq_wa_routing_rule_contact",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    # The paired WA login (numeric phone, no ``@s.whatsapp.net`` suffix).
+    wa_login_id: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    # The contact's WA JID, or ``'*'`` for fallback. Stored canonical —
+    # always lower-cased, including the ``@s.whatsapp.net`` suffix for
+    # individual contacts.
+    contact_jid: Mapped[str] = mapped_column(String(80), nullable=False)
+    agent_id: Mapped[int] = mapped_column(
+        ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 def init_db():
     Base.metadata.create_all(engine)
     _migrate_add_matrix_columns()

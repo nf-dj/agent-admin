@@ -391,6 +391,16 @@ export const api = {
     req<AgentWhatsApp>(`/api/agents/${agentId}/whatsapp`, {
       method: 'PUT', body: JSON.stringify({ login_id }),
     }),
+
+  // --- Per-number WhatsApp routing rules (Phase 1: read-only) ---
+  listWhatsAppRouting: (waLoginId: string) =>
+    req<WhatsAppRoutingState>(
+      `/api/whatsapp/numbers/${encodeURIComponent(waLoginId)}/rules`,
+    ),
+  listWhatsAppContacts: (waLoginId: string) =>
+    req<WhatsAppContactOption[]>(
+      `/api/whatsapp/numbers/${encodeURIComponent(waLoginId)}/contacts`,
+    ),
 };
 
 // --- Per-agent WhatsApp types ---
@@ -414,6 +424,42 @@ export interface AgentWhatsApp {
   whatsapp_login_id: string | null;
   available_logins: WhatsAppLoginOption[];
   bound_portals: BoundPortal[];
+}
+
+// --- WhatsApp routing rules (per-contact bot overrides) ---
+export interface WhatsAppRoutingRule {
+  id: number;
+  wa_login_id: string;
+  contact_jid: string;          // '*' = fallback
+  contact_phone: string | null; // pretty form, null for wildcard
+  agent_id: number;
+  agent_name: string;
+  priority: number;
+}
+
+export interface WhatsAppDefaultBot {
+  agent_id: number;
+  agent_name: string;
+}
+
+export interface WhatsAppPortalSnapshot {
+  contact_jid: string;
+  contact_phone: string | null;
+  portal_mxid: string;
+  portal_name: string;
+}
+
+export interface WhatsAppRoutingState {
+  wa_login_id: string;
+  default_bot: WhatsAppDefaultBot | null;
+  rules: WhatsAppRoutingRule[];
+  portals: WhatsAppPortalSnapshot[];
+}
+
+export interface WhatsAppContactOption {
+  contact_jid: string;
+  contact_phone: string | null;
+  name: string | null;
 }
 
 // --- WhatsApp bridge types ---

@@ -21,6 +21,7 @@ from .routes_me import router as me_router
 from .routes_custom_providers import router as custom_providers_router
 from .routes_whatsapp import router as whatsapp_router
 from .routes_agent_whatsapp import router as agent_whatsapp_router
+from .routes_wa_routing import router as wa_routing_router
 from .whatsapp_client import WhatsAppBridge, WhatsAppBridgeConfig
 
 
@@ -71,6 +72,7 @@ app.include_router(me_router)
 app.include_router(custom_providers_router)
 app.include_router(whatsapp_router)
 app.include_router(agent_whatsapp_router)
+app.include_router(wa_routing_router)
 
 
 @app.get("/api/health")
