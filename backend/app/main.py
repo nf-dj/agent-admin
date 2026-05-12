@@ -19,12 +19,31 @@ from .routes_rooms import router as rooms_router
 from .routes_skills import router as skills_router
 from .routes_me import router as me_router
 from .routes_custom_providers import router as custom_providers_router
+from .routes_whatsapp import router as whatsapp_router
+from .whatsapp_client import WhatsAppBridge, WhatsAppBridgeConfig
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    yield
+
+    # mautrix-whatsapp bridge (optional). Initialised only if both URL
+    # and shared_secret are configured; otherwise the whatsapp routes
+    # return 503 and the frontend hides the WA panel.
+    bridge_cfg = WhatsAppBridgeConfig(
+        base_url=settings.whatsapp_bridge_url,
+        shared_secret=settings.whatsapp_shared_secret,
+    )
+    if bridge_cfg.configured:
+        app.state.whatsapp_bridge = WhatsAppBridge(bridge_cfg)
+    else:
+        app.state.whatsapp_bridge = None
+
+    try:
+        yield
+    finally:
+        if app.state.whatsapp_bridge is not None:
+            await app.state.whatsapp_bridge.aclose()
 
 
 app = FastAPI(title="Agent Admin", version="0.1.0", lifespan=lifespan)
@@ -49,6 +68,7 @@ app.include_router(rooms_router)
 app.include_router(skills_router)
 app.include_router(me_router)
 app.include_router(custom_providers_router)
+app.include_router(whatsapp_router)
 
 
 @app.get("/api/health")

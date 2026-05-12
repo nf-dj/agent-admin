@@ -355,7 +355,75 @@ export const api = {
     req<ProviderTestResult>('/api/me/providers/test', {
       method: 'POST', body: JSON.stringify(body),
     }),
+
+  // --- WhatsApp bridge ---
+  whatsappStatus: () =>
+    req<WhatsAppStatus>('/api/me/whatsapp/status'),
+  whatsappListLogins: () =>
+    req<WhatsAppLogin[]>('/api/me/whatsapp/logins'),
+  whatsappStartLogin: (flow_id: string) =>
+    req<WhatsAppLoginStep>('/api/me/whatsapp/login/start', {
+      method: 'POST', body: JSON.stringify({ flow_id }),
+    }),
+  whatsappLoginStep: (body: {
+    login_id: string;
+    step_id: string;
+    action?: string;
+    payload?: Record<string, unknown> | null;
+  }, signal?: AbortSignal) =>
+    req<WhatsAppLoginStep>('/api/me/whatsapp/login/step', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'display_and_wait', ...body }),
+      signal,
+    }),
+  whatsappDeleteLogin: (login_id: string) =>
+    req<{ ok: boolean; detached_bots: number }>(
+      `/api/me/whatsapp/logins/${encodeURIComponent(login_id)}`,
+      { method: 'DELETE' },
+    ),
 };
+
+// --- WhatsApp bridge types ---
+export interface WhatsAppStatus {
+  configured: boolean;
+  mxid?: string | null;
+  flows?: Array<{ id: string; name: string; description?: string }>;
+}
+
+export interface WhatsAppLogin {
+  id: string;
+  name?: string | null;
+  profile?: Record<string, unknown> | null;
+  state?: Record<string, unknown> | null;
+}
+
+/** Shape returned by /login/start and /login/step. Mirrors mautrix bridgev2. */
+export interface WhatsAppLoginStep {
+  login_id: string;
+  step_id: string;
+  instructions?: string;
+  type:
+    | 'display_and_wait'
+    | 'user_input'
+    | 'cookies'
+    | 'complete'
+    | string;
+  /** When type === 'display_and_wait', the thing to render. */
+  display_and_wait?: {
+    type: 'qr' | 'code' | 'emoji' | string;
+    data: string;
+    image_url?: string;
+  };
+  /** When type === 'user_input', the fields to collect from the user. */
+  user_input?: {
+    fields: Array<{ type: string; id: string; name: string; description?: string }>;
+  };
+  /** When type === 'complete'. */
+  complete?: {
+    user_login_id?: string;
+    user_login?: WhatsAppLogin;
+  };
+}
 
 export interface MatrixCreds {
   matrix_user_id: string;

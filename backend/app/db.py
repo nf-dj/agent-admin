@@ -87,6 +87,11 @@ class Agent(Base):
 
     workspace_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
+    # WhatsApp bridge integration (optional). When set, the bot is wired
+    # into all DM portal rooms for this user's WA login. The id is the
+    # mautrix-whatsapp login_id (an opaque token from the bridge).
+    whatsapp_login_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -325,6 +330,7 @@ def _migrate_add_matrix_columns():
         ("matrix_device_id", "VARCHAR(120)"),
         ("matrix_account_id", "VARCHAR(80)"),
         ("matrix_password", "VARCHAR(120)"),
+        ("whatsapp_login_id", "VARCHAR(120)"),
     ]
     with engine.begin() as conn:
         for name, typ in additions:

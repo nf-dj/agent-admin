@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     matrix_admin_password: str = ""
     matrix_user_prefix: str = "bot_"      # username prefix for bot users
 
+    # mautrix-whatsapp bridge (optional). If configured, users can pair
+    # their own WA accounts and assign them to bots.
+    whatsapp_bridge_url: str = ""          # e.g. http://127.0.0.1:29318
+    whatsapp_shared_secret: str = ""       # provisioning.shared_secret from bridge config
+
     # Frontend dist (if backend should serve it)
     frontend_dist: Path = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
 

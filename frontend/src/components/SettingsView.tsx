@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, type User } from '../api';
 import { ApiKeysPanel } from './ApiKeysPanel';
 import { CustomProvidersPanel } from './CustomProvidersPanel';
+import { WhatsAppPanel } from './WhatsAppPanel';
 
 /**
  * User Settings page.
@@ -163,6 +164,8 @@ export function SettingsView({
       <ApiKeysPanel />
 
       <CustomProvidersPanel />
+
+      <WhatsAppPanel />
     </div>
   );
 }

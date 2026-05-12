@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "matrix-js-sdk": "^41.5.0-rc.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",
