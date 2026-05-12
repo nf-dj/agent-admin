@@ -30,6 +30,9 @@ from .permissions import require_owner
 from .matrix_admin import matrix_admin, MatrixError
 from .whatsapp_bridge_db import bridge_db, BridgePortal
 from .sync import _accept_matrix_invites
+import json
+import time
+import urllib.parse
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/agents", tags=["agents", "whatsapp"])
@@ -114,6 +117,38 @@ def _list_dm_portals(owner_mxid: str, login_id: str) -> list[BridgePortal]:
     if not bridge_db.configured:
         return []
     return bridge_db.list_portals_for_login(owner_mxid, login_id, room_types=["dm"])
+
+
+def _ensure_owner_joined(room_id: str, owner_token: str) -> None:
+    """Make sure the owner has joined the portal room.
+
+    Portal rooms are created by the bridge bot which invites the owner; the
+    owner needs to actually accept before they can invite anyone else.
+    Idempotent: POST /join on an already-joined room is a no-op success.
+    """
+    encoded = urllib.parse.quote(room_id, safe="")
+    matrix_admin._request(
+        "POST",
+        f"/_matrix/client/v3/rooms/{encoded}/join",
+        body={},
+        token=owner_token,
+    )
+
+
+def _send_bridge_command(room_id: str, sender_token: str, command: str) -> None:
+    """Send a bridge command (e.g. ``!wa set-relay``) as the given user.
+
+    The bridge bot processes it server-side and posts a reply in the room.
+    We don't wait for that reply — the command is fire-and-forget.
+    """
+    encoded = urllib.parse.quote(room_id, safe="")
+    txn_id = f"agent-admin-cmd-{int(time.time() * 1000)}"
+    matrix_admin._request(
+        "PUT",
+        f"/_matrix/client/v3/rooms/{encoded}/send/m.room.message/{txn_id}",
+        body={"msgtype": "m.text", "body": command},
+        token=sender_token,
+    )
 
 
 # --- endpoints --------------------------------------------------------------
@@ -244,6 +279,7 @@ async def set_agent_whatsapp(
     # Invite bot to existing portal rooms (best-effort; we don't roll back
     # the DB write if some invites fail — the UI surfaces per-room status).
     invited_count = 0
+    relay_count = 0
     failed: list[str] = []
     if new_login is not None:
         cred = db.query(WebMatrixCredential).filter(
@@ -258,6 +294,17 @@ async def set_agent_whatsapp(
         for p in portals:
             if not p.mxid:
                 continue
+            # Step 1: ensure owner has accepted the portal invite.
+            # The bridge creates the portal and invites @web_u1 but doesn't
+            # force-join; @web_u1 needs to actually be IN the room to invite
+            # anyone else.
+            try:
+                _ensure_owner_joined(p.mxid, cred.access_token)
+            except MatrixError as e:
+                log.warning("owner failed to join %s: %s", p.mxid, e)
+                failed.append(p.mxid)
+                continue
+            # Step 2: owner invites the bot.
             try:
                 matrix_admin.invite_user_to_room(
                     p.mxid, agent.matrix_user_id,
@@ -267,6 +314,19 @@ async def set_agent_whatsapp(
             except MatrixError as e:
                 log.warning("invite to %s failed: %s", p.mxid, e)
                 failed.append(p.mxid)
+                continue
+            # Step 3: enable relay mode so the bot's replies are bridged
+            # to WhatsApp through the owner's WA session. Idempotent — the
+            # bridge bot responds with the same "set as relay" message
+            # even if it was already set, so we just send the command.
+            try:
+                _send_bridge_command(p.mxid, cred.access_token, "!wa set-relay")
+                relay_count += 1
+            except MatrixError as e:
+                log.warning("set-relay in %s failed: %s", p.mxid, e)
+                # Bot is in the room but can't reply via WA — surface as
+                # partial failure.
+                failed.append(p.mxid)
 
         # Nudge the bot to accept the invites it just got.
         try:
@@ -275,8 +335,8 @@ async def set_agent_whatsapp(
             log.exception("post-invite accept loop failed for agent %s", agent.id)
 
     log.info(
-        "agent %s whatsapp binding set to %r (invited %d portals, %d failed)",
-        agent.id, new_login, invited_count, len(failed),
+        "agent %s whatsapp binding set to %r (invited %d portals, %d relayed, %d failed)",
+        agent.id, new_login, invited_count, relay_count, len(failed),
     )
 
     # Return the fresh state (re-uses the GET assembly logic).
