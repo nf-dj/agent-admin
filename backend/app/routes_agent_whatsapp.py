@@ -169,8 +169,10 @@ async def get_agent_whatsapp(
     ).one_or_none()
     owner_mxid = cred.matrix_user_id if cred else None
 
-    # Map of login_id → agent that's already pinned to it (other than this one).
-    # Enforces "one WA number per bot per user".
+    # Map of login_id → first other-bot subscribed to it (informational).
+    # Multiple bots can subscribe to the same number; per-contact routing
+    # rules decide who actually answers. The UI uses this to show
+    # "also used by Bot X" next to a number, not to block selection.
     pinned: dict[str, Agent] = {}
     pinned_rows = db.query(Agent).filter(
         Agent.owner_user_id == current.id,
@@ -178,7 +180,11 @@ async def get_agent_whatsapp(
         Agent.id != agent.id,
     ).all()
     for a in pinned_rows:
-        pinned[a.whatsapp_login_id] = a
+        # First-write-wins; if multiple bots share a number, the UI just
+        # picks one to display as the "other" subscriber. That's fine for
+        # the dropdown hint; the full subscriber list is exposed on the
+        # routing panel.
+        pinned.setdefault(a.whatsapp_login_id, a)
 
     options: list[WhatsAppLoginOption] = []
     for lg in logins:
@@ -248,19 +254,12 @@ async def set_agent_whatsapp(
                 detail=f"You don't have a WhatsApp account with login_id {new_login!r}.",
             )
 
-        # Block double-claims: another of this user's bots already owns it.
-        other = db.query(Agent).filter(
-            Agent.owner_user_id == current.id,
-            Agent.whatsapp_login_id == new_login,
-            Agent.id != agent.id,
-        ).first()
-        if other is not None:
-            raise HTTPException(
-                status_code=409,
-                detail=(f"WhatsApp number is already assigned to bot "
-                        f"'{other.display_name}' (#{other.id}). "
-                        f"Unassign it there first."),
-            )
+        # Note: multiple bots CAN share the same WA number. Per-contact
+        # routing rules (see ``wa_routing_rules``) decide which bot answers
+        # each contact. The bot's ``whatsapp_login_id`` just means "this bot
+        # is subscribed to this number"; it does *not* mean exclusive
+        # ownership. The earlier single-bot-per-number guard was removed
+        # when the routing-rules feature shipped.
 
         # Bot must have a Matrix account to be invited to portal rooms.
         if not agent.matrix_user_id:

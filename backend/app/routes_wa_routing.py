@@ -59,16 +59,32 @@ class RoutingRuleOut(BaseModel):
     priority: int
 
 
-class DefaultBotOut(BaseModel):
-    """The bot that ``agents.whatsapp_login_id`` currently points at.
+class SubscriberOut(BaseModel):
+    """One bot that has subscribed to this WA number
+    (i.e. ``agents.whatsapp_login_id == this``).
 
-    This is the implicit fallback: any contact without a matching rule
-    gets routed here. Migrating it into ``wa_routing_rules`` as a
-    ``contact_jid='*'`` row is a Phase-2 nice-to-have; for now we
-    surface it separately so the UI can show both.
+    Multiple bots can share a number; the routing rules decide who
+    answers each contact. The first subscriber (when there's no
+    ``contact_jid='*'`` fallback rule and no per-contact rule matches)
+    is the implicit default; see ``WhatsAppRoutingOut.default_bot``.
     """
     agent_id: int
     agent_name: str
+
+
+class DefaultBotOut(BaseModel):
+    """The resolved fallback bot.
+
+    Priority:
+      1. The ``contact_jid='*'`` rule (explicit fallback).
+      2. If there's exactly **one** subscriber, that subscriber.
+      3. Otherwise null — the UI warns the user to set an explicit
+         fallback rule, since with multiple subscribers and no rule
+         we can't pick deterministically.
+    """
+    agent_id: int
+    agent_name: str
+    source: str   # "rule" | "sole-subscriber"
 
 
 class PortalSnapshot(BaseModel):
@@ -88,6 +104,11 @@ class PortalSnapshot(BaseModel):
 
 class WhatsAppRoutingOut(BaseModel):
     wa_login_id: str
+    # All of the caller's bots that have subscribed to this number
+    # (i.e. set ``whatsapp_login_id``). Ordered by agent id.
+    subscribers: list[SubscriberOut]
+    # Resolved fallback bot — see DefaultBotOut docstring. Null if
+    # ambiguous (multiple subscribers, no '*' rule).
     default_bot: DefaultBotOut | None
     rules: list[RoutingRuleOut]
     portals: list[PortalSnapshot]
@@ -185,13 +206,13 @@ async def list_routing(
     if not wa_login_id or not wa_login_id.isdigit():
         raise HTTPException(400, "wa_login_id must be a numeric WA login id")
 
-    # The "default" bot is the one with agents.whatsapp_login_id == this.
-    # Scoped to the caller's own bots.
-    default_agent: Agent | None = (
+    # All bots the caller owns that are subscribed to this number.
+    subscribers: list[Agent] = (
         db.query(Agent)
         .filter(Agent.owner_user_id == current.id,
                 Agent.whatsapp_login_id == wa_login_id)
-        .one_or_none()
+        .order_by(Agent.id)
+        .all()
     )
 
     # Routing rules owned by this user on this number.
@@ -203,18 +224,36 @@ async def list_routing(
         .all()
     )
 
-    # Authorization: at least one of (default bot, rules) must exist.
-    if default_agent is None and not rules:
+    # Authorization: at least one of (subscribers, rules) must exist.
+    if not subscribers and not rules:
         raise HTTPException(
             404,
             "No bots or routing rules on this WA number for the current user.",
         )
 
     # Resolve agent names in one query.
-    agent_ids = [r.agent_id for r in rules]
-    if default_agent is not None:
-        agent_ids.append(default_agent.id)
+    agent_ids = [r.agent_id for r in rules] + [a.id for a in subscribers]
     agents = _agents_by_id(db, list(set(agent_ids)))
+
+    # Resolve the fallback bot:
+    #   1. explicit '*' rule wins;
+    #   2. else, if exactly one subscriber, it's the implicit default;
+    #   3. else null — ambiguous.
+    star_rule = next((r for r in rules if r.contact_jid == "*"), None)
+    if star_rule is not None and star_rule.agent_id in agents:
+        default_bot_out = DefaultBotOut(
+            agent_id=star_rule.agent_id,
+            agent_name=agents[star_rule.agent_id].display_name,
+            source="rule",
+        )
+    elif len(subscribers) == 1:
+        default_bot_out = DefaultBotOut(
+            agent_id=subscribers[0].id,
+            agent_name=subscribers[0].display_name,
+            source="sole-subscriber",
+        )
+    else:
+        default_bot_out = None
 
     # Bridge-side snapshot: portals on this number for this owner's MXID.
     portals: list[PortalSnapshot] = []
@@ -244,12 +283,11 @@ async def list_routing(
 
     return WhatsAppRoutingOut(
         wa_login_id=wa_login_id,
-        default_bot=(
-            DefaultBotOut(
-                agent_id=default_agent.id,
-                agent_name=default_agent.display_name,
-            ) if default_agent is not None else None
-        ),
+        subscribers=[
+            SubscriberOut(agent_id=a.id, agent_name=a.display_name)
+            for a in subscribers
+        ],
+        default_bot=default_bot_out,
         rules=[
             RoutingRuleOut(
                 id=r.id,

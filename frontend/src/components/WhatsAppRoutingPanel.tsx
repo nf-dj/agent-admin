@@ -119,7 +119,6 @@ export function WhatsAppRoutingPanel({ waLoginId }: { waLoginId: string }) {
     );
   }
 
-  const fallback = state?.rules.find((r) => r.contact_jid === '*');
   const contactRules = state?.rules.filter((r) => r.contact_jid !== '*') ?? [];
 
   // Index rules by contact_jid for the portals list.
@@ -137,26 +136,54 @@ export function WhatsAppRoutingPanel({ waLoginId }: { waLoginId: string }) {
 
       {err && <div className="banner err" style={{ marginBottom: 12 }}>{err}</div>}
 
-      <div className="row" style={{ marginBottom: 12 }}>
+      <div className="row" style={{ marginBottom: 8 }}>
+        <strong>Subscribed bots</strong>
+        <span className="muted small">
+          ({state?.subscribers.length ?? 0} bots have this number as their WA binding)
+        </span>
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        {(state?.subscribers.length ?? 0) === 0 ? (
+          <span className="muted small">— none —</span>
+        ) : (
+          state!.subscribers.map((s, i) => (
+            <span key={s.agent_id}>
+              {i > 0 ? ', ' : ''}
+              <code>{s.agent_name}</code>
+            </span>
+          ))
+        )}
+      </div>
+
+      <div className="row" style={{ marginBottom: 8 }}>
         <strong>Default bot</strong>
         <span className="muted small">
           (answers any contact without a specific rule)
         </span>
       </div>
       <div style={{ marginBottom: 16 }}>
-        {fallback ? (
-          <code>{fallback.agent_name}</code>
-        ) : state?.default_bot ? (
+        {state?.default_bot ? (
           <>
             <code>{state.default_bot.agent_name}</code>
             <span className="muted small" style={{ marginLeft: 8 }}>
-              (from the bot's primary WhatsApp binding)
+              {state.default_bot.source === 'rule'
+                ? '(from the ‘*’ fallback rule)'
+                : '(only subscriber on this number)'}
             </span>
           </>
         ) : (
           <span className="muted small">— none —</span>
         )}
       </div>
+
+      {!state?.default_bot && (state?.subscribers.length ?? 0) > 1 && (
+        <div className="banner err" style={{ marginBottom: 16 }}>
+          Multiple bots are subscribed to this number but no fallback rule
+          is set. Add a rule with contact <code>*</code> to pick which bot
+          answers unmatched contacts, or every unrouted message will be
+          dropped.
+        </div>
+      )}
 
       <div className="row" style={{ marginBottom: 8 }}>
         <strong>Per-contact rules</strong>

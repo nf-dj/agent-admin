@@ -453,6 +453,14 @@ export interface WhatsAppRoutingRule {
 export interface WhatsAppDefaultBot {
   agent_id: number;
   agent_name: string;
+  /** 'rule' = explicit '*' fallback rule wins.
+   *  'sole-subscriber' = only one bot is subscribed, so it's the implicit default. */
+  source: 'rule' | 'sole-subscriber';
+}
+
+export interface WhatsAppSubscriber {
+  agent_id: number;
+  agent_name: string;
 }
 
 export interface WhatsAppPortalSnapshot {
@@ -464,6 +472,7 @@ export interface WhatsAppPortalSnapshot {
 
 export interface WhatsAppRoutingState {
   wa_login_id: string;
+  subscribers: WhatsAppSubscriber[];
   default_bot: WhatsAppDefaultBot | null;
   rules: WhatsAppRoutingRule[];
   portals: WhatsAppPortalSnapshot[];
