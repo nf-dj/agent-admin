@@ -414,6 +414,11 @@ export const api = {
       `/api/whatsapp/numbers/${encodeURIComponent(waLoginId)}/rules/${ruleId}`,
       { method: 'DELETE' },
     ),
+  applyWhatsAppRouting: (waLoginId: string) =>
+    req<WhatsAppRoutingState>(
+      `/api/whatsapp/numbers/${encodeURIComponent(waLoginId)}/apply`,
+      { method: 'POST' },
+    ),
 };
 
 // --- Per-agent WhatsApp types ---
@@ -470,12 +475,35 @@ export interface WhatsAppPortalSnapshot {
   portal_name: string;
 }
 
+export interface WhatsAppApplyPortal {
+  portal_mxid: string;
+  contact_jid: string;
+  contact_phone: string | null;
+  routed_agent_id: number | null;
+  routed_agent_name: string | null;
+  invited: string[];
+  kicked: string[];
+  relayed: boolean;
+  skipped_reason: string | null;
+  error: string | null;
+}
+
+export interface WhatsAppApplyReport {
+  wa_login_id: string;
+  total_portals: number;
+  changed_portals: number;
+  errored_portals: number;
+  portals: WhatsAppApplyPortal[];
+}
+
 export interface WhatsAppRoutingState {
   wa_login_id: string;
   subscribers: WhatsAppSubscriber[];
   default_bot: WhatsAppDefaultBot | null;
   rules: WhatsAppRoutingRule[];
   portals: WhatsAppPortalSnapshot[];
+  /** Set on responses to POST/DELETE/apply — null on plain GET. */
+  apply?: WhatsAppApplyReport | null;
 }
 
 export interface WhatsAppContactOption {

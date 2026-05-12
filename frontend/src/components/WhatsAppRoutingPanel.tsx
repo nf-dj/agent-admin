@@ -24,6 +24,7 @@ export function WhatsAppRoutingPanel({ waLoginId }: { waLoginId: string }) {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [appliedAt, setAppliedAt] = useState<number | null>(null);
 
   // Add-rule form state
   const [contactPick, setContactPick] = useState<string>('');     // dropdown
@@ -88,6 +89,7 @@ export function WhatsAppRoutingPanel({ waLoginId }: { waLoginId: string }) {
         priority: prio,
       });
       setState(next);
+      if (next.apply) setAppliedAt(Date.now());
       reset();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -103,6 +105,21 @@ export function WhatsAppRoutingPanel({ waLoginId }: { waLoginId: string }) {
     try {
       const next = await api.deleteWhatsAppRoutingRule(waLoginId, ruleId);
       setState(next);
+      if (next.apply) setAppliedAt(Date.now());
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [waLoginId]);
+
+  const reapply = useCallback(async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const next = await api.applyWhatsAppRouting(waLoginId);
+      setState(next);
+      setAppliedAt(Date.now());
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -325,9 +342,65 @@ export function WhatsAppRoutingPanel({ waLoginId }: { waLoginId: string }) {
         </ul>
       )}
 
-      <div className="muted small" style={{ marginTop: 16, fontStyle: 'italic' }}>
-        Rules are declarative for now — saving one doesn't yet move bots
-        between portal rooms. That worker lands in Phase 3.
+      {/* --- last apply summary --- */}
+      {state?.apply && (
+        <div className="section" style={{ marginTop: 16, padding: '8px 12px' }}>
+          <div className="row" style={{ marginBottom: 4 }}>
+            <strong>Last apply</strong>
+            <span className="muted small">
+              {state.apply.changed_portals} changed,{' '}
+              {state.apply.errored_portals} errored,{' '}
+              {state.apply.total_portals} total
+              {appliedAt ? ` · ${new Date(appliedAt).toLocaleTimeString()}` : ''}
+            </span>
+          </div>
+          {state.apply.portals.length === 0 ? (
+            <div className="muted small">No portals reconciled.</div>
+          ) : (
+            <ul className="list-unstyled">
+              {state.apply.portals.map((p) => (
+                <li key={p.portal_mxid} className="row" style={{ padding: '2px 0' }}>
+                  <code>{p.contact_phone ?? p.contact_jid}</code>
+                  <span className="muted small">→</span>
+                  <code>{p.routed_agent_name ?? '—'}</code>
+                  {p.invited.length > 0 && (
+                    <span className="muted small">invited {p.invited.length}</span>
+                  )}
+                  {p.kicked.length > 0 && (
+                    <span className="muted small">removed {p.kicked.length}</span>
+                  )}
+                  {p.relayed && (
+                    <span className="muted small">relay✓</span>
+                  )}
+                  {p.skipped_reason && (
+                    <span className="muted small" style={{ color: 'var(--err)' }}>
+                      skipped: {p.skipped_reason}
+                    </span>
+                  )}
+                  {p.error && (
+                    <span className="muted small" style={{ color: 'var(--err)' }}>
+                      {p.error}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="row" style={{ marginTop: 16, gap: 8 }}>
+        <button
+          className="btn-secondary"
+          onClick={() => void reapply()}
+          disabled={busy}
+        >
+          {busy ? 'Applying…' : 'Re-apply rules to portals'}
+        </button>
+        <span className="muted small">
+          Reconciles each portal: invites the routed bot, has the other
+          subscribed bots leave, re-arms relay mode. Idempotent.
+        </span>
       </div>
     </div>
   );

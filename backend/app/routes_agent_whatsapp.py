@@ -333,6 +333,16 @@ async def set_agent_whatsapp(
         except Exception:
             log.exception("post-invite accept loop failed for agent %s", agent.id)
 
+        # Re-apply routing rules: if other bots are already subscribed to
+        # this number, the rules decide who stays in each portal. Without
+        # this, every freshly-bound bot would be in every portal until the
+        # user touched the rules table.
+        try:
+            from .wa_routing_apply import apply_routing_for_number
+            apply_routing_for_number(db, current, new_login)
+        except Exception:
+            log.exception("apply_routing failed after bind")
+
     log.info(
         "agent %s whatsapp binding set to %r (invited %d portals, %d relayed, %d failed)",
         agent.id, new_login, invited_count, relay_count, len(failed),

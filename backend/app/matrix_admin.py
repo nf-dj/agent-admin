@@ -286,6 +286,114 @@ class MatrixAdmin:
                 return True
             raise
 
+    def kick_user_from_room(
+        self,
+        room_id: str,
+        kicked_mxid: str,
+        *,
+        kicker_token: str,
+        reason: str | None = None,
+    ) -> bool:
+        """Kick ``kicked_mxid`` from ``room_id`` using the kicker's token.
+
+        Returns True on success or if the user wasn't in the room. The
+        kicker must have power_level >= kick. In mautrix portal rooms the
+        paired user is admin, so their token works.
+
+        Idempotent against the common "user not in room" case: Synapse
+        returns 403 with a 'not in the room' message; we treat that as
+        success.
+        """
+        encoded_room = urllib.parse.quote(room_id, safe="")
+        body: dict = {"user_id": kicked_mxid}
+        if reason:
+            body["reason"] = reason
+        try:
+            self._request(
+                "POST",
+                f"/_matrix/client/v3/rooms/{encoded_room}/kick",
+                body=body,
+                token=kicker_token,
+            )
+            return True
+        except MatrixError as e:
+            msg = (e.body or "").lower()
+            # Idempotent cases: user already not a member.
+            if e.status == 403 and (
+                "not in the room" in msg
+                or "cannot kick user who was not in the room" in msg
+                or "is not in the room" in msg
+            ):
+                return True
+            raise
+
+    def leave_room(
+        self,
+        room_id: str,
+        *,
+        token: str,
+    ) -> bool:
+        """Have the user identified by ``token`` leave ``room_id``.
+
+        Returns True on success or if the user was already not a member.
+        Useful when room power levels prevent the owner from kicking a
+        bot — the bot can always leave itself.
+        """
+        encoded_room = urllib.parse.quote(room_id, safe="")
+        try:
+            self._request(
+                "POST",
+                f"/_matrix/client/v3/rooms/{encoded_room}/leave",
+                body={},
+                token=token,
+            )
+            return True
+        except MatrixError as e:
+            msg = (e.body or "").lower()
+            if e.status in (403, 404) and (
+                "not in the room" in msg
+                or "not a member" in msg
+                or "unknown room" in msg
+                or "is not in the room" in msg
+            ):
+                return True
+            raise
+
+    def get_room_member_ids(
+        self,
+        room_id: str,
+        *,
+        token: str,
+        memberships: tuple[str, ...] = ("join", "invite"),
+    ) -> list[str]:
+        """Return MXIDs in ``room_id`` filtered by membership state.
+
+        Defaults to currently-joined and pending-invite. Uses
+        ``/joined_members`` when the caller only wants joins (cheaper),
+        otherwise falls back to ``/members``.
+        """
+        encoded_room = urllib.parse.quote(room_id, safe="")
+        if memberships == ("join",):
+            data = self._request(
+                "GET",
+                f"/_matrix/client/v3/rooms/{encoded_room}/joined_members",
+                token=token,
+            )
+            return list((data or {}).get("joined", {}).keys())
+        # Full state read — events array, one m.room.member per user.
+        data = self._request(
+            "GET",
+            f"/_matrix/client/v3/rooms/{encoded_room}/members",
+            token=token,
+        )
+        out: list[str] = []
+        for ev in (data or {}).get("chunk", []) or []:
+            if (ev.get("content") or {}).get("membership") in memberships:
+                sk = ev.get("state_key")
+                if sk:
+                    out.append(sk)
+        return out
+
     def accept_pending_invites(self, access_token: str, user_id: str) -> int:
         """Auto-join any rooms the user has been invited to, and tag them as DMs.
 

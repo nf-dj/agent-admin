@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from .auth import get_current_user
 from .db import SessionLocal, User, Agent, WhatsAppRoutingRule, WebMatrixCredential
 from .whatsapp_bridge_db import bridge_db
+from .wa_routing_apply import apply_routing_for_number, ApplyReport
 
 
 log = logging.getLogger(__name__)
@@ -102,6 +103,27 @@ class PortalSnapshot(BaseModel):
     portal_name: str
 
 
+class PortalApplyOut(BaseModel):
+    portal_mxid: str
+    contact_jid: str
+    contact_phone: str | None
+    routed_agent_id: int | None
+    routed_agent_name: str | None
+    invited: list[str]
+    kicked: list[str]
+    relayed: bool
+    skipped_reason: str | None
+    error: str | None
+
+
+class ApplyReportOut(BaseModel):
+    wa_login_id: str
+    total_portals: int
+    changed_portals: int
+    errored_portals: int
+    portals: list[PortalApplyOut]
+
+
 class WhatsAppRoutingOut(BaseModel):
     wa_login_id: str
     # All of the caller's bots that have subscribed to this number
@@ -112,6 +134,8 @@ class WhatsAppRoutingOut(BaseModel):
     default_bot: DefaultBotOut | None
     rules: list[RoutingRuleOut]
     portals: list[PortalSnapshot]
+    # Optional report from the last apply (set only by mutating endpoints).
+    apply: ApplyReportOut | None = None
 
 
 class ContactOption(BaseModel):
@@ -186,6 +210,30 @@ def _agents_by_id(db: Session, ids: list[int]) -> dict[int, Agent]:
         return {}
     rows = db.query(Agent).filter(Agent.id.in_(ids)).all()
     return {a.id: a for a in rows}
+
+
+def _apply_report_to_out(report: ApplyReport) -> ApplyReportOut:
+    return ApplyReportOut(
+        wa_login_id=report.wa_login_id,
+        total_portals=report.total_portals,
+        changed_portals=report.changed_portals,
+        errored_portals=report.errored_portals,
+        portals=[
+            PortalApplyOut(
+                portal_mxid=p.portal_mxid,
+                contact_jid=p.contact_jid,
+                contact_phone=_phone_from_jid(p.contact_jid),
+                routed_agent_id=p.routed_agent_id,
+                routed_agent_name=p.routed_agent_name,
+                invited=p.invited,
+                kicked=p.kicked,
+                relayed=p.relayed,
+                skipped_reason=p.skipped_reason,
+                error=p.error,
+            )
+            for p in report.portals
+        ],
+    )
 
 
 # --- routes -----------------------------------------------------------------
@@ -442,7 +490,58 @@ async def upsert_routing_rule(
         )
     db.commit()
 
-    return await list_routing(wa_login_id, current=current, db=db)
+    # Apply the new rule to existing portals: invite the routed bot, kick
+    # other subscriber bots, re-arm relay mode. Best-effort — errors are
+    # surfaced via the apply report, not as endpoint failures.
+    try:
+        report = apply_routing_for_number(db, current, wa_login_id)
+    except Exception:
+        log.exception("apply_routing failed after upsert")
+        report = None
+
+    out = await list_routing(wa_login_id, current=current, db=db)
+    if report is not None:
+        out.apply = _apply_report_to_out(report)
+    return out
+
+
+@router.post("/{wa_login_id}/apply", response_model=WhatsAppRoutingOut)
+async def apply_routing(
+    wa_login_id: str,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Re-apply current routing rules to all portals on this number.
+
+    Useful when rules drift (e.g. a bot got manually kicked, or a new
+    portal appeared and wasn't yet handled). Idempotent.
+    """
+    wa_login_id = wa_login_id.strip()
+    if not wa_login_id or not wa_login_id.isdigit():
+        raise HTTPException(400, "wa_login_id must be a numeric WA login id")
+
+    # Authorization: must own a bot here or have a rule here.
+    owns_default = db.query(Agent).filter(
+        Agent.owner_user_id == current.id,
+        Agent.whatsapp_login_id == wa_login_id,
+    ).first() is not None
+    owns_rule = db.query(WhatsAppRoutingRule).filter(
+        WhatsAppRoutingRule.user_id == current.id,
+        WhatsAppRoutingRule.wa_login_id == wa_login_id,
+    ).first() is not None
+    if not (owns_default or owns_rule):
+        raise HTTPException(403, "You don't own this WA number.")
+
+    try:
+        report = apply_routing_for_number(db, current, wa_login_id)
+    except Exception:
+        log.exception("apply_routing failed (manual)")
+        report = None
+
+    out = await list_routing(wa_login_id, current=current, db=db)
+    if report is not None:
+        out.apply = _apply_report_to_out(report)
+    return out
 
 
 @router.delete("/{wa_login_id}/rules/{rule_id}", response_model=WhatsAppRoutingOut)
@@ -460,10 +559,23 @@ async def delete_routing_rule(
     ).one_or_none()
     if rule is None:
         raise HTTPException(404, "Rule not found.")
+    contact_jid = rule.contact_jid
     db.delete(rule)
     db.commit()
     log.info(
         "wa-routing: user %s deleted rule #%s (%s on %s)",
-        current.id, rule_id, rule.contact_jid, wa_login_id,
+        current.id, rule_id, contact_jid, wa_login_id,
     )
-    return await list_routing(wa_login_id, current=current, db=db)
+
+    # Re-apply routing: the deleted rule may have been the reason a bot was
+    # in a portal; the next-best rule (or the '*' fallback) now wins.
+    try:
+        report = apply_routing_for_number(db, current, wa_login_id)
+    except Exception:
+        log.exception("apply_routing failed after delete")
+        report = None
+
+    out = await list_routing(wa_login_id, current=current, db=db)
+    if report is not None:
+        out.apply = _apply_report_to_out(report)
+    return out
