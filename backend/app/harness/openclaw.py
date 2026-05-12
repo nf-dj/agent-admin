@@ -299,6 +299,16 @@ class OpenClawHarness(Harness):
                     "allowlistOnly": False,
                     "autoJoin": "always",
                     "dm": {"policy": "open"},
+                    # Allow group/room messages by default. Without this,
+                    # `resolveAllowlistProviderRuntimeGroupPolicy` defaults
+                    # to `"allowlist"` (because the matrix provider IS
+                    # configured) and every room message is silently
+                    # dropped at `matrix: drop room message (no allowlist
+                    # ...)`. Mautrix WhatsApp portals look like 5-member
+                    # rooms (bot + web user + bridge bot + 2 ghosts), so
+                    # OpenClaw's strict 2-member DM check rejects them
+                    # and they fall through this group path.
+                    "groupPolicy": "open",
                     "accounts": {
                         acct.account_id: {
                             "homeserver": acct.homeserver,
@@ -318,6 +328,31 @@ class OpenClawHarness(Harness):
                             # `resolveMatrixAccountAllowlistConfig` in
                             # openclaw's `account-config-*.js`.
                             "dm": {"allowFrom": ["*"]},
+                            # Mirror channel-level groupPolicy so it works
+                            # even if a future migration drops the global.
+                            "groupPolicy": "open",
+                            # In rooms (groups), default behaviour is
+                            # `requireMention=true` — the bot only responds
+                            # when @-mentioned. WA portals contain ghosts
+                            # that can't @-mention the bot, so the bot would
+                            # never reply. `rooms["*"].autoReply=true`
+                            # tells the bot to reply to every inbound room
+                            # message regardless of mention. (Bridge relay
+                            # mode already guarantees only the paired WA
+                            # user can route messages to the portal, so
+                            # this is safe.)
+                            "rooms": {"*": {"autoReply": True}},
+                            # For group/channel chats, OpenClaw's default
+                            # `sourceReplyDeliveryMode` is
+                            # `message_tool_only` — agent must explicitly
+                            # call the `message` tool to send a reply. We
+                            # want the assistant's plain text response to
+                            # land in the channel automatically, same as a
+                            # DM. See `resolveSourceReplyDeliveryMode` in
+                            # `source-reply-delivery-mode-*.js`.
+                            "messages": {
+                                "groupChat": {"visibleReplies": "automatic"}
+                            },
                         }
                     },
                 }
