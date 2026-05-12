@@ -253,6 +253,39 @@ class MatrixAdmin:
         self._admin_request("PUT", f"/_synapse/admin/v2/users/{encoded}",
                             body={"displayname": name})
 
+    def invite_user_to_room(
+        self,
+        room_id: str,
+        invitee_mxid: str,
+        *,
+        inviter_token: str,
+    ) -> bool:
+        """Invite ``invitee_mxid`` to ``room_id`` using the inviter's token.
+
+        Returns True on success or if the user was already in the room.
+        Raises :class:`MatrixError` for other failures.
+
+        The inviter must be a member of the room with sufficient power level
+        (default: power_level >= invite). For mautrix-whatsapp portal rooms
+        the user who paired the WA account is admin, so their stored web-
+        Matrix token works fine.
+        """
+        encoded_room = urllib.parse.quote(room_id, safe="")
+        try:
+            self._request(
+                "POST",
+                f"/_matrix/client/v3/rooms/{encoded_room}/invite",
+                body={"user_id": invitee_mxid},
+                token=inviter_token,
+            )
+            return True
+        except MatrixError as e:
+            # Common idempotent cases: already in the room (403 M_FORBIDDEN with
+            # a 'is already in the room' message). Treat as success.
+            if e.status == 403 and "already in the room" in (e.body or "").lower():
+                return True
+            raise
+
     def accept_pending_invites(self, access_token: str, user_id: str) -> int:
         """Auto-join any rooms the user has been invited to, and tag them as DMs.
 

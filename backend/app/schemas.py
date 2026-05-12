@@ -254,6 +254,9 @@ class AgentOut(BaseModel):
     has_telegram: bool
     matrix_user_id: str | None
     workspace_path: str | None
+    # mautrix-whatsapp login_id this bot is assigned to (DMs sent to that
+    # WA number are handled by this bot). Null if none.
+    whatsapp_login_id: str | None = None
     created_at: datetime
     updated_at: datetime
     # Role of the current user on this agent. "owner" or "member".
@@ -279,6 +282,7 @@ class AgentOut(BaseModel):
             has_telegram=bool(a.telegram_bot_token),
             matrix_user_id=a.matrix_user_id,
             workspace_path=a.workspace_path,
+            whatsapp_login_id=a.whatsapp_login_id,
             created_at=a.created_at,
             updated_at=a.updated_at,
             my_role=my_role,

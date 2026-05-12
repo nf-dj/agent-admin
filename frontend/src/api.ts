@@ -102,6 +102,8 @@ export interface Agent {
   has_telegram: boolean;
   matrix_user_id: string | null;
   workspace_path: string | null;
+  /** WhatsApp login id this bot is bound to, or null. */
+  whatsapp_login_id?: string | null;
   created_at: string;
   updated_at: string;
   /** Current user's role on this agent. */
@@ -381,7 +383,38 @@ export const api = {
       `/api/me/whatsapp/logins/${encodeURIComponent(login_id)}`,
       { method: 'DELETE' },
     ),
+
+  // --- Per-agent WhatsApp binding ---
+  getAgentWhatsApp: (agentId: number) =>
+    req<AgentWhatsApp>(`/api/agents/${agentId}/whatsapp`),
+  setAgentWhatsApp: (agentId: number, login_id: string | null) =>
+    req<AgentWhatsApp>(`/api/agents/${agentId}/whatsapp`, {
+      method: 'PUT', body: JSON.stringify({ login_id }),
+    }),
 };
+
+// --- Per-agent WhatsApp types ---
+export interface BoundPortal {
+  portal_id: string;
+  mxid: string;
+  name: string;
+  room_type: string;
+}
+
+export interface WhatsAppLoginOption {
+  id: string;
+  name: string | null;
+  dm_count: number;
+  taken_by_agent_id: number | null;
+  taken_by_agent_name: string | null;
+}
+
+export interface AgentWhatsApp {
+  agent_id: number;
+  whatsapp_login_id: string | null;
+  available_logins: WhatsAppLoginOption[];
+  bound_portals: BoundPortal[];
+}
 
 // --- WhatsApp bridge types ---
 export interface WhatsAppStatus {

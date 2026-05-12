@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, type AgentDetail, type Model } from '../api';
 import { MembersPanel } from './MembersPanel';
 import { AgentApiKeysPanel } from './AgentApiKeysPanel';
+import { AgentWhatsAppPanel } from './AgentWhatsAppPanel';
 
 export function AgentDetailView({ agentId, onBack, onChat }: { agentId: number; onBack: () => void; onChat: (id: number) => void }) {
   const [agent, setAgent] = useState<AgentDetail | null>(null);
@@ -269,6 +270,8 @@ export function AgentDetailView({ agentId, onBack, onChat }: { agentId: number; 
       </div>
 
       {agent.my_role === 'owner' && <AgentApiKeysPanel agentId={agent.id} />}
+
+      {agent.my_role === 'owner' && <AgentWhatsAppPanel agentId={agent.id} />}
 
       <MembersPanel agentId={agent.id} isOwner={agent.my_role === 'owner'} />
 
