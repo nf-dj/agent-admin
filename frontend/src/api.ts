@@ -392,7 +392,7 @@ export const api = {
       method: 'PUT', body: JSON.stringify({ login_id }),
     }),
 
-  // --- Per-number WhatsApp routing rules (Phase 1: read-only) ---
+  // --- Per-number WhatsApp routing rules ---
   listWhatsAppRouting: (waLoginId: string) =>
     req<WhatsAppRoutingState>(
       `/api/whatsapp/numbers/${encodeURIComponent(waLoginId)}/rules`,
@@ -400,6 +400,19 @@ export const api = {
   listWhatsAppContacts: (waLoginId: string) =>
     req<WhatsAppContactOption[]>(
       `/api/whatsapp/numbers/${encodeURIComponent(waLoginId)}/contacts`,
+    ),
+  upsertWhatsAppRoutingRule: (
+    waLoginId: string,
+    body: { contact: string; agent_id: number; priority?: number },
+  ) =>
+    req<WhatsAppRoutingState>(
+      `/api/whatsapp/numbers/${encodeURIComponent(waLoginId)}/rules`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+  deleteWhatsAppRoutingRule: (waLoginId: string, ruleId: number) =>
+    req<WhatsAppRoutingState>(
+      `/api/whatsapp/numbers/${encodeURIComponent(waLoginId)}/rules/${ruleId}`,
+      { method: 'DELETE' },
     ),
 };
 

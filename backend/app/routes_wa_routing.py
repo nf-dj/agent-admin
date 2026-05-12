@@ -1,25 +1,26 @@
-"""WhatsApp per-contact routing rules (Phase 1: read-only).
+"""WhatsApp per-contact routing rules.
 
 A WA number can be shared across multiple bots: the existing
 ``agents.whatsapp_login_id`` column holds the *default* bot, and this
 module manages contact-specific overrides via the ``wa_routing_rules``
 table.
 
-Endpoints (Phase 1):
-  GET /api/whatsapp/numbers/{wa_login_id}/rules
-    → All routing rules the current user has on this number, plus the
-      number's "default bot" (the existing single bind), plus a snapshot
-      of current portal rooms with the bot they're currently bound to.
-
-  GET /api/whatsapp/numbers/{wa_login_id}/contacts
-    → Known WA contacts on this number (from the bridge DB), suitable
-      for populating a dropdown in the "Add rule" form.
+Endpoints:
+  GET    /api/whatsapp/numbers/{wa_login_id}/rules
+    → Default bot + rules + portal snapshot with resolved routing.
+  GET    /api/whatsapp/numbers/{wa_login_id}/contacts
+    → Known WA contacts on this number (for the rule form dropdown).
+  POST   /api/whatsapp/numbers/{wa_login_id}/rules
+    → Create or update a routing rule (upsert on contact_jid).
+  DELETE /api/whatsapp/numbers/{wa_login_id}/rules/{rule_id}
+    → Remove a routing rule.
 
 Owner-only. ``wa_login_id`` is the bare numeric login (e.g. ``66939218159``),
 not the full JID.
 
-Phase 2 will add POST/DELETE for rules.
-Phase 3 will add the worker that applies rules to portal rooms.
+Phase 3 will add the worker that walks portals and applies these rules.
+For now the rules are purely declarative — saving one doesn't change any
+portal memberships.
 """
 from __future__ import annotations
 import logging
@@ -100,6 +101,17 @@ class ContactOption(BaseModel):
     name: str | None
 
 
+class RoutingRuleIn(BaseModel):
+    """Body for POST .../rules. ``contact`` can be:
+      - ``"*"`` for the fallback rule,
+      - a bare phone like ``"66909966651"`` or ``"+66 90 996 6651"``,
+      - or a full JID like ``"66909966651@s.whatsapp.net"``.
+    """
+    contact: str
+    agent_id: int
+    priority: int = 100
+
+
 # --- helpers ----------------------------------------------------------------
 
 def _phone_from_jid(jid: str) -> str | None:
@@ -115,6 +127,37 @@ def _phone_from_jid(jid: str) -> str | None:
     if host != "s.whatsapp.net":
         return None
     return local if local.isdigit() else None
+
+
+def _canonical_contact(raw: str) -> str:
+    """Normalize a user-supplied contact identifier to the canonical form
+    we store in ``wa_routing_rules.contact_jid``.
+
+    Returns either ``"*"`` or ``"<digits>@s.whatsapp.net"``. Raises
+    ``HTTPException`` if the input can't be parsed as either.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        raise HTTPException(400, "contact is required")
+    if raw == "*":
+        return "*"
+    # Allow full JIDs as-is (after light normalisation).
+    if "@" in raw:
+        local, host = raw.split("@", 1)
+        local = "".join(ch for ch in local if ch.isdigit())
+        if host.lower() == "s.whatsapp.net" and local:
+            return f"{local}@s.whatsapp.net"
+        raise HTTPException(400, f"unsupported JID host {host!r}")
+    # Strip everything that isn't a digit. Drop a leading 00 if present
+    # (some users write "0066…" for international form).
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if digits.startswith("00"):
+        digits = digits[2:]
+    if not digits:
+        raise HTTPException(400, f"could not parse phone number from {raw!r}")
+    if len(digits) < 6 or len(digits) > 20:
+        raise HTTPException(400, f"phone number {digits!r} looks wrong (len={len(digits)})")
+    return f"{digits}@s.whatsapp.net"
 
 
 def _agents_by_id(db: Session, ids: list[int]) -> dict[int, Agent]:
@@ -283,3 +326,106 @@ async def list_contacts(
             name=p.name or None,
         ))
     return out
+
+
+@router.post("/{wa_login_id}/rules", response_model=WhatsAppRoutingOut)
+async def upsert_routing_rule(
+    wa_login_id: str,
+    body: RoutingRuleIn,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create or update a routing rule on this WA number.
+
+    Uniqueness key is ``(user_id, wa_login_id, contact_jid)`` — posting a
+    second rule for the same contact silently replaces the first. This
+    matches users' mental model ("set the routing for this contact")
+    better than rejecting duplicates with a 409.
+    """
+    wa_login_id = wa_login_id.strip()
+    if not wa_login_id or not wa_login_id.isdigit():
+        raise HTTPException(400, "wa_login_id must be a numeric WA login id")
+
+    # Authorization: the user must own a bot bound to this number OR
+    # already have a rule here. Without this anyone could pollute the
+    # table with rules for numbers they don't pair.
+    owns_default = db.query(Agent).filter(
+        Agent.owner_user_id == current.id,
+        Agent.whatsapp_login_id == wa_login_id,
+    ).first() is not None
+    owns_rule = db.query(WhatsAppRoutingRule).filter(
+        WhatsAppRoutingRule.user_id == current.id,
+        WhatsAppRoutingRule.wa_login_id == wa_login_id,
+    ).first() is not None
+    if not (owns_default or owns_rule):
+        raise HTTPException(403, "You don't own this WA number.")
+
+    # The target agent must be one of the caller's own bots.
+    agent = db.query(Agent).filter(
+        Agent.id == body.agent_id,
+        Agent.owner_user_id == current.id,
+    ).one_or_none()
+    if agent is None:
+        raise HTTPException(404, f"Agent #{body.agent_id} not found or not yours.")
+    if not agent.matrix_user_id:
+        raise HTTPException(
+            400,
+            f"Agent '{agent.display_name}' has no Matrix account — it can't be "
+            "routed WhatsApp messages yet. Enable Matrix integration first.",
+        )
+
+    contact_jid = _canonical_contact(body.contact)
+
+    # Upsert.
+    existing = db.query(WhatsAppRoutingRule).filter(
+        WhatsAppRoutingRule.user_id == current.id,
+        WhatsAppRoutingRule.wa_login_id == wa_login_id,
+        WhatsAppRoutingRule.contact_jid == contact_jid,
+    ).one_or_none()
+    if existing is None:
+        rule = WhatsAppRoutingRule(
+            user_id=current.id,
+            wa_login_id=wa_login_id,
+            contact_jid=contact_jid,
+            agent_id=agent.id,
+            priority=body.priority,
+        )
+        db.add(rule)
+        log.info(
+            "wa-routing: user %s created rule %s -> agent %s on %s",
+            current.id, contact_jid, agent.id, wa_login_id,
+        )
+    else:
+        existing.agent_id = agent.id
+        existing.priority = body.priority
+        log.info(
+            "wa-routing: user %s updated rule %s -> agent %s on %s",
+            current.id, contact_jid, agent.id, wa_login_id,
+        )
+    db.commit()
+
+    return await list_routing(wa_login_id, current=current, db=db)
+
+
+@router.delete("/{wa_login_id}/rules/{rule_id}", response_model=WhatsAppRoutingOut)
+async def delete_routing_rule(
+    wa_login_id: str,
+    rule_id: int,
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a routing rule. Returns the fresh state for the number."""
+    rule = db.query(WhatsAppRoutingRule).filter(
+        WhatsAppRoutingRule.id == rule_id,
+        WhatsAppRoutingRule.user_id == current.id,
+        WhatsAppRoutingRule.wa_login_id == wa_login_id,
+    ).one_or_none()
+    if rule is None:
+        raise HTTPException(404, "Rule not found.")
+    db.delete(rule)
+    db.commit()
+    log.info(
+        "wa-routing: user %s deleted rule #%s (%s on %s)",
+        current.id, rule_id, rule.contact_jid, wa_login_id,
+    )
+    return await list_routing(wa_login_id, current=current, db=db)
