@@ -293,6 +293,16 @@ class OpenClawHarness(Harness):
         channel-level (not per-account), so this is idempotent across bots.
         """
         patch = {
+            # Top-level `messages.groupChat.visibleReplies` controls auto-delivery
+            # of the assistant's plain text reply in *group* / *channel* chats.
+            # The default is `message_tool` (i.e. agent must call `message()`
+            # explicitly), which silently swallows replies in mautrix portals.
+            # `resolveSourceReplyDeliveryMode` reads this from the TOP of the
+            # config (NOT per-account `accounts.<id>.messages` — that path is
+            # ignored despite what an earlier version of our postmortem said).
+            # Without this, you see `Delivery suppressed by
+            # sourceReplyDeliveryMode: message_tool_only` in the gateway log.
+            "messages": {"groupChat": {"visibleReplies": "automatic"}},
             "channels": {
                 "matrix": {
                     "enabled": True,
@@ -342,14 +352,11 @@ class OpenClawHarness(Harness):
                             # user can route messages to the portal, so
                             # this is safe.)
                             "rooms": {"*": {"autoReply": True}},
-                            # For group/channel chats, OpenClaw's default
-                            # `sourceReplyDeliveryMode` is
-                            # `message_tool_only` — agent must explicitly
-                            # call the `message` tool to send a reply. We
-                            # want the assistant's plain text response to
-                            # land in the channel automatically, same as a
-                            # DM. See `resolveSourceReplyDeliveryMode` in
-                            # `source-reply-delivery-mode-*.js`.
+                            # NOTE: the per-account `messages.groupChat.visibleReplies`
+                            # path is NOT consulted by `resolveSourceReplyDeliveryMode`
+                            # — only the top-level one (set above) is. We keep this
+                            # mirror here purely as defensive forward-compat in case
+                            # a future OpenClaw release supports per-account override.
                             "messages": {
                                 "groupChat": {"visibleReplies": "automatic"}
                             },
