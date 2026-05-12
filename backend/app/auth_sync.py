@@ -40,7 +40,7 @@ from typing import Iterable
 
 from sqlalchemy.orm import Session
 
-from .db import Agent, AgentApiKey, UserApiKey
+from .db import Agent, AgentApiKey, UserApiKey, CustomProvider
 
 log = logging.getLogger(__name__)
 
@@ -328,3 +328,135 @@ def _has_override(db: Session, agent_id: int, provider: str) -> bool:
 def all_agents(db: Session) -> Iterable[Agent]:
     """Helper for backfill scripts."""
     return db.query(Agent).all()
+
+
+# ---------------------------------------------------------------------------
+# Custom providers (user-owned BYO LLM endpoints)
+# ---------------------------------------------------------------------------
+#
+# Each ``CustomProvider`` row maps to a single entry under
+# ``models.providers.<namespaced_id>`` in ``openclaw.json``. We namespace
+# by user id so two users can register a provider with the same slug
+# without clobbering each other:
+#
+#     u3-nucbox-llama, u7-nucbox-llama, ...
+#
+# Model defs go into the same block's ``models`` array; aliases get added
+# to ``agents.defaults.models`` so they show up in the picker like any
+# built-in model.
+
+
+def namespaced_provider_id(user_id: int, slug: str) -> str:
+    """Stable, collision-free provider id for ``openclaw.json``."""
+    return f"u{user_id}-{slug}"
+
+
+def _models_array_from(provider: CustomProvider) -> list[dict]:
+    try:
+        models = json.loads(provider.models_json or "[]")
+    except json.JSONDecodeError:
+        log.warning("CustomProvider id=%s has invalid models_json; treating as empty",
+                    provider.id)
+        return []
+    if not isinstance(models, list):
+        return []
+    # Strip null values — OpenClaw's config schema rejects them on
+    # optional fields (e.g. ``compat: null`` fails validation). Recurse
+    # one level so nested optional objects are cleaned too.
+    cleaned: list[dict] = []
+    for m in models:
+        if not isinstance(m, dict):
+            continue
+        cleaned.append({k: v for k, v in m.items() if v is not None})
+    return cleaned
+
+
+def sync_custom_provider(provider: CustomProvider) -> None:
+    """Write/refresh this provider's block in ``openclaw.json``.
+
+    Idempotent: re-running produces the same on-disk state. Safe to call
+    after every CRUD mutation. Best-effort — logs and continues on disk
+    failures so the API call still succeeds.
+    """
+    try:
+        cfg = _read_json(OCPLATFORM_CONFIG, {})
+        models_root = cfg.setdefault("models", {})
+        providers = models_root.setdefault("providers", {})
+
+        pid = namespaced_provider_id(provider.user_id, provider.slug)
+        block: dict = {
+            "baseUrl": provider.base_url,
+            "api": provider.api_type,
+            "models": _models_array_from(provider),
+        }
+        if provider.api_key:
+            # Inline the key. Same trust model as the rest of
+            # ``openclaw.json`` — plaintext is the house style here.
+            block["apiKey"] = provider.api_key
+        providers[pid] = block
+
+        # Also register each model as a default alias so it shows up in the
+        # picker / list_models() output with a friendly name.
+        defaults = (
+            cfg.setdefault("agents", {})
+               .setdefault("defaults", {})
+               .setdefault("models", {})
+        )
+        # First, drop any stale aliases for this provider (model removed/renamed).
+        prefix = f"{pid}/"
+        for stale in [k for k in defaults if k.startswith(prefix)]:
+            defaults.pop(stale, None)
+        for m in block["models"]:
+            mid = m.get("id")
+            if not mid:
+                continue
+            defaults[f"{pid}/{mid}"] = {
+                "alias": m.get("name") or mid,
+            }
+
+        _write_json(OCPLATFORM_CONFIG, cfg)
+        log.info("Synced custom provider %s (%d models)",
+                 pid, len(block["models"]))
+        # Bounce the gateway so the running agent processes pick up the
+        # new model defs (contextWindow, maxTokens, baseUrl, key). Debounced
+        # — batched saves coalesce into a single restart.
+        _schedule_gateway_restart_if_available()
+    except Exception:
+        log.exception("Failed to sync custom provider id=%s", provider.id)
+
+
+def remove_custom_provider(user_id: int, slug: str) -> None:
+    """Drop this provider's block + its model aliases from ``openclaw.json``.
+
+    Safe to call when no on-disk entry exists.
+    """
+    pid = namespaced_provider_id(user_id, slug)
+    try:
+        cfg = _read_json(OCPLATFORM_CONFIG, {})
+        providers = cfg.get("models", {}).get("providers", {}) or {}
+        removed = providers.pop(pid, None) is not None
+
+        defaults = (
+            cfg.get("agents", {}).get("defaults", {}).get("models", {}) or {}
+        )
+        prefix = f"{pid}/"
+        stale = [k for k in defaults if k.startswith(prefix)]
+        for k in stale:
+            defaults.pop(k, None)
+
+        if removed or stale:
+            _write_json(OCPLATFORM_CONFIG, cfg)
+            log.info("Removed custom provider %s from openclaw.json", pid)
+            _schedule_gateway_restart_if_available()
+    except Exception:
+        log.exception("Failed to remove custom provider %s", pid)
+
+
+def _schedule_gateway_restart_if_available() -> None:
+    """Bounce the gateway, swallowing import-time failures so tests/CI
+    that don't have the systemd helper installed still work."""
+    try:
+        from .gateway_restart import schedule_gateway_restart
+        schedule_gateway_restart()
+    except Exception:
+        log.exception("Could not schedule gateway restart")

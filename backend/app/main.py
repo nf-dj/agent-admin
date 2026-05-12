@@ -18,6 +18,7 @@ from .routes_agent_keys import router as agent_keys_router
 from .routes_rooms import router as rooms_router
 from .routes_skills import router as skills_router
 from .routes_me import router as me_router
+from .routes_custom_providers import router as custom_providers_router
 
 
 @asynccontextmanager
@@ -47,6 +48,7 @@ app.include_router(agent_keys_router)
 app.include_router(rooms_router)
 app.include_router(skills_router)
 app.include_router(me_router)
+app.include_router(custom_providers_router)
 
 
 @app.get("/api/health")

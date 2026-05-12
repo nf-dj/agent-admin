@@ -73,12 +73,39 @@ def list_harnesses(current=Depends(get_current_user)):
 
 
 @router.get("/models", response_model=list[ModelOut])
-def list_models(harness: str = "openclaw", current=Depends(get_current_user)):
+def list_models(
+    harness: str = "openclaw",
+    current: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Models the current user is allowed to pick from.
+
+    Includes built-in providers (everyone sees these) plus the current
+    user's own custom providers. Custom providers belonging to *other*
+    users live in the same ``openclaw.json`` block but must be hidden
+    here, otherwise users could discover each other's private endpoints.
+    """
     try:
         h = get_harness(harness)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    return [ModelOut(**m) for m in h.list_models()]
+
+    # Build the set of provider ids that belong to OTHER users so we can
+    # filter them out. Anything else (built-ins, the current user's own
+    # custom providers) is fair game.
+    from .db import CustomProvider
+    from .auth_sync import namespaced_provider_id
+    other_user_pids: set[str] = {
+        namespaced_provider_id(cp.user_id, cp.slug)
+        for cp in db.query(CustomProvider)
+                    .filter(CustomProvider.user_id != current.id).all()
+    }
+
+    return [
+        ModelOut(**m)
+        for m in h.list_models()
+        if m.get("provider") not in other_user_pids
+    ]
 
 
 # ---------- agent CRUD ----------

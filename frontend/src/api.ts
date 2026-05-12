@@ -143,6 +143,62 @@ export interface Model {
   provider: string;
 }
 
+/** One model definition inside a custom provider's ``models`` array. */
+export interface CustomModelDef {
+  id: string;
+  name: string;
+  reasoning?: boolean;
+  input?: string[];
+  cost?: { input: number; output: number };
+  contextWindow?: number;
+  maxTokens?: number;
+  compat?: Record<string, any> | null;
+}
+
+/** User-owned custom LLM provider (BYO endpoint). */
+export interface CustomProvider {
+  id: number;
+  slug: string;
+  display_name: string;
+  base_url: string;
+  api_type: string;
+  has_api_key: boolean;
+  api_key_preview: string | null;
+  models: CustomModelDef[];
+  /** Namespaced id as it appears in ocplatform.json, e.g. ``u3-nucbox-llama``. */
+  namespaced_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomProviderCreate {
+  slug: string;
+  display_name: string;
+  base_url: string;
+  api_type: string;
+  api_key?: string | null;
+  models?: CustomModelDef[];
+}
+
+export interface CustomProviderUpdate {
+  display_name?: string;
+  base_url?: string;
+  api_type?: string;
+  api_key?: string;
+  /** Pass true to wipe the stored key. */
+  clear_api_key?: boolean;
+  models?: CustomModelDef[];
+}
+
+export interface ProviderTestResult {
+  ok: boolean;
+  status_code: number | null;
+  latency_ms: number | null;
+  discovered_models: string[] | null;
+  error: string | null;
+  endpoint: string | null;
+}
+
 export interface Harness {
   name: string;
   display_name: string;
@@ -274,6 +330,30 @@ export const api = {
   deleteAgentApiKey: (agentId: number, provider: string) =>
     req<AgentApiKey>(`/api/agents/${agentId}/api-keys/${encodeURIComponent(provider)}`, {
       method: 'DELETE',
+    }),
+
+  // --- Custom providers (BYO LLM endpoints) ---
+  listCustomProviders: () =>
+    req<CustomProvider[]>('/api/me/providers'),
+  createCustomProvider: (body: CustomProviderCreate) =>
+    req<CustomProvider>('/api/me/providers', {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  updateCustomProvider: (id: number, body: CustomProviderUpdate) =>
+    req<CustomProvider>(`/api/me/providers/${id}`, {
+      method: 'PATCH', body: JSON.stringify(body),
+    }),
+  deleteCustomProvider: (id: number) =>
+    req<void>(`/api/me/providers/${id}`, { method: 'DELETE' }),
+  testCustomProvider: (id: number) =>
+    req<ProviderTestResult>(`/api/me/providers/${id}/test`, { method: 'POST' }),
+  testCustomProviderPayload: (body: {
+    base_url: string;
+    api_type: string;
+    api_key?: string | null;
+  }) =>
+    req<ProviderTestResult>('/api/me/providers/test', {
+      method: 'POST', body: JSON.stringify(body),
     }),
 };
 

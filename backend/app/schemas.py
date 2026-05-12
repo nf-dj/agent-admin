@@ -1,4 +1,5 @@
 """Pydantic schemas for API request/response bodies."""
+import re
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -328,6 +329,123 @@ class HarnessOut(BaseModel):
     name: str
     display_name: str
     available: bool
+
+
+# --- Custom providers (BYO LLM endpoints) ---
+ALLOWED_CUSTOM_API_TYPES = {
+    "openai-completions", "openai-chat", "anthropic",
+    "google", "ollama",
+}
+
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$|^[a-z0-9]$")
+
+
+class CustomModelDef(BaseModel):
+    """One model entry inside a custom provider's ``models`` array.
+
+    Mirrors OpenClaw's expected shape. Most fields have sensible defaults
+    so users can register a model with just ``{id, name}``.
+    """
+    id: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=200)
+    reasoning: bool = False
+    input: list[str] = Field(default_factory=lambda: ["text"])
+    cost: dict = Field(default_factory=lambda: {"input": 0, "output": 0})
+    contextWindow: int = Field(default=8192, ge=1, le=10_000_000)
+    maxTokens: int = Field(default=4096, ge=1, le=1_000_000)
+    compat: dict | None = None
+
+
+class CustomProviderCreate(BaseModel):
+    slug: str = Field(min_length=1, max_length=64)
+    display_name: str = Field(min_length=1, max_length=120)
+    base_url: str = Field(min_length=1, max_length=500)
+    api_type: str = Field(default="openai-completions")
+    api_key: str | None = Field(default=None, max_length=1024)
+    models: list[CustomModelDef] = Field(default_factory=list)
+
+    @field_validator("slug")
+    @classmethod
+    def _slug(cls, v: str) -> str:
+        v = v.strip().lower()
+        if not _SLUG_RE.match(v):
+            raise ValueError(
+                "slug must be lowercase alnum + hyphens, 1–64 chars, "
+                "no leading/trailing hyphen"
+            )
+        return v
+
+    @field_validator("api_type")
+    @classmethod
+    def _api_type(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v not in ALLOWED_CUSTOM_API_TYPES:
+            raise ValueError(
+                f"api_type must be one of {sorted(ALLOWED_CUSTOM_API_TYPES)}")
+        return v
+
+    @field_validator("base_url")
+    @classmethod
+    def _url(cls, v: str) -> str:
+        v = v.strip().rstrip("/")
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("base_url must start with http:// or https://")
+        return v
+
+    @field_validator("api_key")
+    @classmethod
+    def _key(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
+
+
+class CustomProviderUpdate(BaseModel):
+    """Partial update — every field optional."""
+    display_name: str | None = Field(default=None, min_length=1, max_length=120)
+    base_url: str | None = Field(default=None, min_length=1, max_length=500)
+    api_type: str | None = None
+    api_key: str | None = Field(default=None, max_length=1024)
+    # Pass an empty string to clear the key explicitly; None = leave unchanged.
+    clear_api_key: bool = False
+    models: list[CustomModelDef] | None = None
+
+    @field_validator("api_type")
+    @classmethod
+    def _api_type(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().lower()
+        if v not in ALLOWED_CUSTOM_API_TYPES:
+            raise ValueError(
+                f"api_type must be one of {sorted(ALLOWED_CUSTOM_API_TYPES)}")
+        return v
+
+    @field_validator("base_url")
+    @classmethod
+    def _url(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip().rstrip("/")
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("base_url must start with http:// or https://")
+        return v
+
+
+class CustomProviderOut(BaseModel):
+    id: int
+    slug: str
+    display_name: str
+    base_url: str
+    api_type: str
+    has_api_key: bool
+    api_key_preview: str | None = None
+    models: list[CustomModelDef] = Field(default_factory=list)
+    # Namespaced id as it appears in openclaw.json (e.g. ``u3-nucbox-llama``)
+    namespaced_id: str
+    created_at: datetime
+    updated_at: datetime
 
 class WebMatrixCredsOut(BaseModel):
     """Credentials handed to the browser to drive matrix-js-sdk."""

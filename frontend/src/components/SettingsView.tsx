@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, type User } from '../api';
 import { ApiKeysPanel } from './ApiKeysPanel';
+import { CustomProvidersPanel } from './CustomProvidersPanel';
 
 /**
  * User Settings page.
@@ -160,6 +161,8 @@ export function SettingsView({
       </div>
 
       <ApiKeysPanel />
+
+      <CustomProvidersPanel />
     </div>
   );
 }

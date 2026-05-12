@@ -1,7 +1,8 @@
 """SQLAlchemy setup + models."""
 from datetime import datetime
 from sqlalchemy import (
-    create_engine, String, Integer, DateTime, ForeignKey, Text, UniqueConstraint
+    create_engine, event, String, Integer, DateTime, ForeignKey, Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 from .config import settings
@@ -11,6 +12,24 @@ engine = create_engine(
     f"sqlite:///{settings.db_path}",
     connect_args={"check_same_thread": False},
 )
+
+
+# SQLite has ``ON DELETE CASCADE`` syntax in its DDL but ignores it unless
+# the per-connection ``foreign_keys`` pragma is on (it defaults to off).
+# Without this, deleting an Agent would silently leave orphaned
+# ``agent_members`` rows behind, and since our PK is plain ``INTEGER
+# PRIMARY KEY`` (not AUTOINCREMENT) the next insert can reuse the same id
+# — then the orphan row collides on ``(agent_id, user_id)`` and the
+# whole create blows up with a UNIQUE-constraint 500.
+#
+# Enable FKs on every new connection so cascades actually fire.
+@event.listens_for(engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_conn, _conn_record):
+    cur = dbapi_conn.cursor()
+    try:
+        cur.execute("PRAGMA foreign_keys = ON")
+    finally:
+        cur.close()
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
@@ -178,6 +197,45 @@ class UserApiKey(Base):
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     api_key: Mapped[str] = mapped_column(String(1024), nullable=False)
     key_preview: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CustomProvider(Base):
+    """User-owned LLM provider config (BYO endpoint).
+
+    Lets a user register their own model provider (e.g. a local llama-server
+    reachable over Tailscale) so they can create agents that use it. Stored
+    plaintext like ``UserApiKey``: same trust domain as ``openclaw.json``,
+    which already keeps provider keys in the clear.
+
+    ``slug`` is the per-user-unique short id (e.g. ``nucbox-llama``). At
+    sync time we namespace it as ``u<userId>-<slug>`` when writing into
+    ``openclaw.json`` so two users can both have a provider named
+    ``nucbox-llama`` without colliding.
+
+    ``models_json`` is the raw JSON array shape OpenClaw expects under
+    ``models.providers.<id>.models`` — list of ``{id, name, reasoning,
+    input, cost, contextWindow, maxTokens, compat}`` objects.
+    """
+    __tablename__ = "custom_providers"
+    __table_args__ = (
+        UniqueConstraint("user_id", "slug", name="uq_user_custom_provider_slug"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    # OpenClaw's ``api`` field: openai-completions, openai-chat, anthropic, ...
+    api_type: Mapped[str] = mapped_column(String(40), nullable=False, default="openai-completions")
+    # Optional — local servers often don't require a key.
+    api_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # JSON-encoded list of model definitions.
+    models_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
